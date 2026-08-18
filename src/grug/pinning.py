@@ -34,7 +34,9 @@ NUMBER_RE = re.compile(r"(?<![\w.])\d+(?:[.,:/-]\d+)*%?(?![\w])")
 
 #: Stripped before comparing two words, so "volume," matches "volume" and
 #: "(9.6" matches "9.6". Internal punctuation is kept: "3-5" stays one token.
-_EDGE_PUNCT = "\"'“”‘’.,;:!?()[]{}<>—–…"
+#: Stripped before comparing two words. Markdown wrappers are included: a
+#: negation written as **no** or `not` must still match the force list.
+_EDGE_PUNCT = "\"'“”‘’.,;:!?()[]{}<>—–…*_~`#"
 
 
 def normalise_word(word: str) -> str:

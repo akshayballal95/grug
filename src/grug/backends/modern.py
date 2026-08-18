@@ -190,17 +190,30 @@ class ModernBackend(CompressorBackend):
         forced = {
             normalise_word(w) for w in collect_force_tokens(text, base, entities=preserve_entities)
         }
+        pinned: list[int] = []
         for i, word in enumerate(words):
             core = normalise_word(word)
             # is_negation catches -n't contractions, whose cue is a suffix and
             # so never matches a force list of whole words.
-            pinned = word.startswith("\n") or core in forced or is_negation(core)
-            if pinned or (reserve_digit and NUMBER_RE.search(word)):
+            if (
+                word.startswith("\n")
+                or core in forced
+                or is_negation(core)
+                or (reserve_digit and NUMBER_RE.search(word))
+            ):
                 probs[i] = 1.0
+                pinned.append(i)
 
-        keep = round(rate * len(words))
-        keep = max(1, min(len(words), keep))
-        chosen = sorted(sorted(range(len(words)), key=lambda i: -probs[i])[:keep])
+        # Pinned words are kept outright rather than competing for the budget.
+        # Ranking everything by score and taking the top k lets a short,
+        # pin-dense chunk cut a negation, which makes the guarantee no
+        # guarantee at all.
+        keep = max(1, min(len(words), round(rate * len(words))))
+        pinned_set = set(pinned)
+        spare = sorted(
+            (i for i in range(len(words)) if i not in pinned_set), key=lambda i: -probs[i]
+        )
+        chosen = sorted(pinned + spare[: max(0, keep - len(pinned))])
         compressed = join_words([words[i] for i in chosen])
 
         return CompressionResult.build(
