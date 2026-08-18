@@ -21,6 +21,7 @@ from ..verify import find_numbers, is_negation
 from .alignment import annotate, split_words
 
 __all__ = [
+    "INSTRUCTIONS",
     "TEACHER_INSTRUCTION",
     "TeacherScore",
     "compress_with_teacher",
@@ -44,6 +45,35 @@ understand, please compress the following text:
 {text}
 
 The compressed text is:"""
+
+#: Adds a negation rule. The teacher's choices become the student's labels, so a
+#: teacher that drops "not" trains a model to drop it -- and losing a negation
+#: inverts a claim rather than merely blurring it.
+_NEGATION_RULE = """6. NEVER remove a negation. Keep every one of: not, no, never, \
+none, neither, nor, cannot, without, unless, except, and every -n't contraction \
+(don't, doesn't, won't, isn't). Removing a negation reverses the meaning of the \
+sentence, which is far worse than keeping a few extra words."""
+
+#: Also pins the other two things the verifier polices.
+_CRITICAL_RULE = """7. NEVER remove a number, date, quantity, or proper noun \
+(names of people, organisations, and places). These carry facts that cannot be \
+recovered from context."""
+
+
+def _with_rules(*rules: str) -> str:
+    """Insert extra numbered conditions into the base instruction."""
+    marker = "5. Do not add new words or symbols."
+    return TEACHER_INSTRUCTION.replace(marker, marker + "\n" + "\n".join(rules), 1).replace(
+        "the 5 conditions below", f"the {5 + len(rules)} conditions below", 1
+    )
+
+
+#: Instruction variants, so a prompt change can be measured rather than assumed.
+INSTRUCTIONS: dict[str, str] = {
+    "baseline": TEACHER_INSTRUCTION,
+    "negation": _with_rules(_NEGATION_RULE),
+    "critical": _with_rules(_NEGATION_RULE, _CRITICAL_RULE),
+}
 
 
 @dataclass

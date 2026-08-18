@@ -425,6 +425,10 @@ def train_distill(
     temperature: Annotated[
         float, typer.Option("--temperature", help="Above 0 so repeated samples differ.")
     ] = 0.7,
+    instructions: Annotated[
+        str,
+        typer.Option("--instructions", help="Prompt variants: baseline,negation,critical."),
+    ] = "baseline",
     out: Annotated[str | None, typer.Option("--out", "-o", help="Write JSON here.")] = None,
 ) -> None:
     """Compare teachers on how good a training corpus they produce.
@@ -439,21 +443,27 @@ def train_distill(
     passages = [e.context for e in qa.load_qa(limit=limit)]
     _err(f"{len(passages)} passages x {samples} samples per teacher")
 
+    variants = [v.strip() for v in instructions.split(",") if v.strip()]
+    for variant in variants:
+        if variant not in distill.INSTRUCTIONS:
+            _err(f"error: unknown instruction {variant!r}; have {list(distill.INSTRUCTIONS)}")
+            raise typer.Exit(EXIT_ERROR)
+
     results = []
     for model in [m.strip() for m in models.split(",") if m.strip()]:
         client = llm.LLMClient(
             model=model, workers=workers, temperature=temperature, max_tokens=4096
         )
-        prompts = [
-            (distill.TEACHER_INSTRUCTION.format(text=p), "")
-            for p in passages
-            for _ in range(samples)
-        ]
-        flat = client.many(prompts)
-        grouped = [flat[i * samples : (i + 1) * samples] for i in range(len(passages))]
-        score = distill.score_teacher(model, passages, grouped)
-        results.append(score)
-        _err("  " + score.summary())
+        for variant in variants:
+            template = distill.INSTRUCTIONS[variant]
+            prompts = [(template.format(text=p), "") for p in passages for _ in range(samples)]
+            flat = client.many(prompts)
+            grouped = [flat[i * samples : (i + 1) * samples] for i in range(len(passages))]
+            label = model.split("/")[-1] + (f" [{variant}]" if len(variants) > 1 else "")
+            score = distill.score_teacher(label, passages, grouped)
+            score.metadata["instruction"] = variant
+            results.append(score)
+            _err("  " + score.summary())
 
     if out:
         from dataclasses import asdict
