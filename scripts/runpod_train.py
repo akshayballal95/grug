@@ -47,6 +47,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--max-length", type=int, default=512)
     p.add_argument("--cs-weight", type=float, default=0.0)
     p.add_argument(
+        "--patience",
+        type=int,
+        default=3,
+        help="Stop after N epochs without val_f1 gain. 0 = run all epochs.",
+    )
+    p.add_argument(
         "--gpu", default=None, help="Exact GPU type id. Default: cheapest with enough VRAM."
     )
     p.add_argument("--max-price", type=float, default=0.60, help="Refuse GPUs above this $/hr.")
@@ -208,7 +214,7 @@ grug train run \
   --model @MODEL@ --epochs @EPOCHS@ \
   --batch-size @BATCH@ --lr @LR@ \
   --max-length @MAXLEN@ --cs-weight @CSW@ \
-  --push-to @HFREPO@ \
+  --push-to @HFREPO@ --patience @PATIENCE@ \
   --device cuda
 
 cat > /tmp/push.py <<'PUSH_EOF'
@@ -260,6 +266,7 @@ def bootstrap(args) -> str:
         "@CSW@": str(args.cs_weight),
         "@HFREPO@": args.repo,
         "@LABELREPO@": args.labels,
+        "@PATIENCE@": str(args.patience),
         "@PRIVATE@": str(bool(args.private)),
     }
     script = _BOOTSTRAP

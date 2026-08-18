@@ -411,6 +411,12 @@ def train_run(
     push_to: Annotated[
         str | None, typer.Option("--push-to", help="Hub repo to stream per-epoch metrics to.")
     ] = None,
+    select_on: Annotated[
+        str, typer.Option("--select-on", help="Metric the saved checkpoint is chosen by.")
+    ] = "val_f1",
+    patience: Annotated[
+        int, typer.Option("--patience", min=0, help="Stop after N epochs without gain. 0 = never.")
+    ] = 0,
 ) -> None:
     """Fine-tune an encoder into a preserve/discard token classifier."""
     trainer = _training("trainer")
@@ -423,6 +429,8 @@ def train_run(
         device=device,
         cs_weight=cs_weight,
         push_to=push_to,
+        select_on=select_on,
+        patience=patience,
     )
     metrics = trainer.train(data, out, config)
     _err(f"saved checkpoint to {out}")

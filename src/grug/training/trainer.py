@@ -37,6 +37,12 @@ class TrainConfig:
     #: Hub repo to stream per-epoch metrics to. Training on a remote GPU is
     #: otherwise a black box until it finishes.
     push_to: str | None = None
+    #: Metric to select the checkpoint on. Training past the peak is normal --
+    #: val loss turns up while train loss keeps falling -- so the last epoch is
+    #: usually not the one worth keeping.
+    select_on: str = "val_f1"
+    #: Stop after this many epochs without improvement. 0 disables.
+    patience: int = 0
     #: Weight on the MOOSComp inter-class cosine similarity term. 0 reproduces
     #: the LLMLingua-2 objective exactly; raise it to separate the two classes
     #: in the final layer, which is where over-smoothing bites.
@@ -152,6 +158,9 @@ def train(
     )
 
     history: list[dict[str, float]] = []
+    best_score = float("-inf")
+    best_epoch = 0
+    stale = 0
     for epoch in range(config.epochs):
         model.train()
         running = 0.0
@@ -181,12 +190,46 @@ def train(
         history.append(entry)
         if progress:
             print(f"  -> {entry}", flush=True)
-        _write_metrics(out_dir, config, device, len(train_set), len(val_set), history)
+        # Keep the best epoch, not the last one.
+        score = entry.get(config.select_on)
+        improved = score is not None and score > best_score
+        if improved:
+            best_score, best_epoch, stale = score, epoch + 1, 0
+        else:
+            stale += 1
+        if improved or not val_set:
+            model.save_pretrained(out_dir)
+            tokenizer.save_pretrained(out_dir)
+            if progress:
+                print(f"  saved checkpoint (best {config.select_on}={best_score:.4f})", flush=True)
+
+        _write_metrics(
+            out_dir,
+            config,
+            device,
+            len(train_set),
+            len(val_set),
+            history,
+            best_epoch=best_epoch,
+            best_score=best_score,
+        )
         _publish(config.push_to, out_dir, epoch + 1, config.epochs)
 
-    model.save_pretrained(out_dir)
-    tokenizer.save_pretrained(out_dir)
-    return _write_metrics(out_dir, config, device, len(train_set), len(val_set), history)
+        if config.patience and stale >= config.patience:
+            if progress:
+                print(f"  stopping early: no {config.select_on} gain in {stale} epochs", flush=True)
+            break
+
+    return _write_metrics(
+        out_dir,
+        config,
+        device,
+        len(train_set),
+        len(val_set),
+        history,
+        best_epoch=best_epoch,
+        best_score=best_score,
+    )
 
 
 def _write_metrics(
@@ -196,6 +239,9 @@ def _write_metrics(
     train_examples: int,
     val_examples: int,
     history: list[dict[str, float]],
+    *,
+    best_epoch: int = 0,
+    best_score: float = float("-inf"),
 ) -> dict[str, Any]:
     """Write metrics.json after every epoch, not just at the end."""
     metrics = {
@@ -204,6 +250,8 @@ def _write_metrics(
         "train_examples": train_examples,
         "val_examples": val_examples,
         "epochs_done": len(history),
+        "best_epoch": best_epoch,
+        "best_score": None if best_score == float("-inf") else best_score,
         "history": history,
     }
     (out_dir / "metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")

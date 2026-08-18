@@ -91,6 +91,13 @@ the backend averages sub-word probabilities to score the word.
 | `--epochs` / `--lr` / `--batch-size` | `10` / `1e-5` / `10` | the paper's settings |
 | `--max-length` | `512` | raise toward 8192 for a modern encoder |
 | `--cs-weight` | `0.0` | see below |
+| `--select-on` | `val_f1` | metric the saved checkpoint is chosen by |
+| `--patience` | `0` (CLI) / `3` (dispatcher) | stop after N epochs without gain |
+
+The checkpoint saved is the **best** epoch, not the last. This matters: on
+ModernBERT-base over the full corpus, val loss bottoms at epoch 4 and rises
+afterwards while train loss keeps falling, so epoch 10 is measurably worse than
+epoch 5. `metrics.json` records `best_epoch` and `best_score`.
 
 `--cs-weight` adds [MOOSComp][moos]'s inter-class cosine similarity loss, which
 penalises preserve and discard representations for being similar in the final
