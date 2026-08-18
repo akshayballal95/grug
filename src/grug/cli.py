@@ -412,6 +412,59 @@ def train_prepare(
     sys.stdout.write("\n")
 
 
+@train_app.command("distill")
+def train_distill(
+    models: Annotated[
+        str, typer.Option("--models", help="Comma list of litellm model ids to compare.")
+    ],
+    limit: Annotated[int, typer.Option("--limit", min=1, help="Passages per teacher.")] = 10,
+    samples: Annotated[
+        int, typer.Option("--samples", min=1, help="Compressions per passage, for consistency.")
+    ] = 3,
+    workers: Annotated[int, typer.Option("--workers", min=1)] = 8,
+    temperature: Annotated[
+        float, typer.Option("--temperature", help="Above 0 so repeated samples differ.")
+    ] = 0.7,
+    out: Annotated[str | None, typer.Option("--out", "-o", help="Write JSON here.")] = None,
+) -> None:
+    """Compare teachers on how good a training corpus they produce.
+
+    Not just compression: a teacher that compresses hard while dropping
+    negations produces labels that teach the student to drop them.
+    """
+    distill = _training("distill")
+    qa = _benchmark("qa")
+    llm = _benchmark("llm")
+
+    passages = [e.context for e in qa.load_qa(limit=limit)]
+    _err(f"{len(passages)} passages x {samples} samples per teacher")
+
+    results = []
+    for model in [m.strip() for m in models.split(",") if m.strip()]:
+        client = llm.LLMClient(
+            model=model, workers=workers, temperature=temperature, max_tokens=4096
+        )
+        prompts = [
+            (distill.TEACHER_INSTRUCTION.format(text=p), "")
+            for p in passages
+            for _ in range(samples)
+        ]
+        flat = client.many(prompts)
+        grouped = [flat[i * samples : (i + 1) * samples] for i in range(len(passages))]
+        score = distill.score_teacher(model, passages, grouped)
+        results.append(score)
+        _err("  " + score.summary())
+
+    if out:
+        from dataclasses import asdict
+
+        Path(out).parent.mkdir(parents=True, exist_ok=True)
+        Path(out).write_text(json.dumps([asdict(r) for r in results], indent=2), encoding="utf-8")
+        _err(f"wrote {out}")
+    json.dump([r.__dict__ for r in results], sys.stdout, indent=2, default=str)
+    sys.stdout.write("\n")
+
+
 @train_app.command("run")
 def train_run(
     data: Annotated[
