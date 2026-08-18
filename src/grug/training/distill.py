@@ -54,11 +54,6 @@ none, neither, nor, cannot, without, unless, except, and every -n't contraction 
 (don't, doesn't, won't, isn't). Removing a negation reverses the meaning of the \
 sentence, which is far worse than keeping a few extra words."""
 
-#: Also pins the other two things the verifier polices.
-_CRITICAL_RULE = """7. NEVER remove a number, date, quantity, or proper noun \
-(names of people, organisations, and places). These carry facts that cannot be \
-recovered from context."""
-
 
 def _with_rules(*rules: str) -> str:
     """Insert extra numbered conditions into the base instruction."""
@@ -69,10 +64,13 @@ def _with_rules(*rules: str) -> str:
 
 
 #: Instruction variants, so a prompt change can be measured rather than assumed.
+#: A "critical" variant that also pinned numbers and proper nouns was tried and
+#: dropped: it scored *worse* on negations (0.76 vs 0.91) and compressed less,
+#: because extra rules diluted the one that mattered -- and numbers and entities
+#: are already guaranteed deterministically by the backend's force list.
 INSTRUCTIONS: dict[str, str] = {
     "baseline": TEACHER_INSTRUCTION,
     "negation": _with_rules(_NEGATION_RULE),
-    "critical": _with_rules(_NEGATION_RULE, _CRITICAL_RULE),
 }
 
 
