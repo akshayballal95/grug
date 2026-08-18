@@ -18,7 +18,7 @@ import re
 from typing import Any
 
 from ..base import CompressionResult, CompressorBackend, MissingDependencyError
-from ..pinning import NUMBER_RE, collect_force_tokens
+from ..pinning import NUMBER_RE, collect_force_tokens, normalise_word
 from ..registry import register_backend
 from ..verify import NEGATION_FORCE_TOKENS
 
@@ -171,9 +171,14 @@ class ModernBackend(CompressorBackend):
         words = split_words(text)
         probs = self._score(words)
 
-        forced = set(collect_force_tokens(text, base, entities=preserve_entities))
+        # Compare normalised forms: a raw token carries its punctuation, so
+        # "not," would otherwise miss a force list containing "not" -- and the
+        # words that escaped were exactly the negations this is meant to pin.
+        forced = {
+            normalise_word(w) for w in collect_force_tokens(text, base, entities=preserve_entities)
+        }
         for i, word in enumerate(words):
-            pinned = word.startswith("\n") or word in forced
+            pinned = word.startswith("\n") or normalise_word(word) in forced
             if pinned or (reserve_digit and NUMBER_RE.search(word)):
                 probs[i] = 1.0
 

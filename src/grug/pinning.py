@@ -18,7 +18,13 @@ from collections.abc import Iterable
 from .chunking import PLACEHOLDER_RE
 from .verify import find_entities
 
-__all__ = ["NUMBER_RE", "collect_force_tokens", "restore_forced", "snap_to_words"]
+__all__ = [
+    "NUMBER_RE",
+    "collect_force_tokens",
+    "normalise_word",
+    "restore_forced",
+    "snap_to_words",
+]
 
 _WORD_RE = re.compile(r"\S+")
 
@@ -31,8 +37,12 @@ NUMBER_RE = re.compile(r"(?<![\w.])\d+(?:[.,:/-]\d+)*%?(?![\w])")
 _EDGE_PUNCT = "\"'“”‘’.,;:!?()[]{}<>—–…"
 
 
-def _norm(word: str) -> str:
+def normalise_word(word: str) -> str:
+    """Strip edge punctuation and case, so "not," and "not" are the same word."""
     return word.strip(_EDGE_PUNCT).lower()
+
+
+_norm = normalise_word
 
 
 def _align(originals: list[str], survivors: list[str]) -> list[int | None]:
