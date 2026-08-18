@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import json
 import os
 import sys
 import textwrap
@@ -68,6 +69,12 @@ def parse_args() -> argparse.Namespace:
         "--go", action="store_true", help="Actually create the pod. Without this, dry run."
     )
     p.add_argument("--poll", type=int, default=60, help="Seconds between status polls.")
+    p.add_argument(
+        "--max-hours",
+        type=float,
+        default=8.0,
+        help="Terminate the pod if its uptime exceeds this, whatever it is doing.",
+    )
     return p.parse_args()
 
 
@@ -275,6 +282,45 @@ def bootstrap(args) -> str:
     return script.strip()
 
 
+def _pod_state(pod_id: str) -> tuple[float | None, int | None]:
+    """Pod uptime in seconds and GPU utilisation, or (None, None) if it is gone."""
+    import requests
+    from runpod.api.graphql import USER_AGENT
+
+    query = (
+        'query { pod(input:{podId:"' + pod_id + '"}) { runtime { uptimeInSeconds '
+        "gpus { gpuUtilPercent } } } }"
+    )
+    try:
+        response = requests.post(
+            "https://api.runpod.io/graphql",
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": "Bearer " + os.environ["RUNPOD_API_KEY"],
+                "User-Agent": USER_AGENT,
+            },
+            data=json.dumps({"query": query}),
+            timeout=30,
+        )
+        pod = (response.json().get("data") or {}).get("pod")
+    except Exception:
+        return 0.0, None
+    if not pod or not pod.get("runtime"):
+        return None, None
+    runtime = pod["runtime"]
+    gpus = runtime.get("gpus") or [{}]
+    return runtime.get("uptimeInSeconds") or 0, gpus[0].get("gpuUtilPercent")
+
+
+def _terminate(runpod, pod_id: str, why: str) -> None:
+    print(f"  terminating pod: {why}")
+    try:
+        runpod.terminate_pod(pod_id)
+        print("  terminated")
+    except Exception as exc:
+        print(f"  TERMINATE FAILED, stop it by hand: {exc}")
+
+
 def _docker_args(script: str) -> str:
     """Wrap the bootstrap so it survives GraphQL and shell quoting.
 
@@ -347,21 +393,32 @@ def main() -> int:
     pod_id = pod["id"]
     print(f"  pod {pod_id} created; polling every {args.poll}s. Ctrl-C stops polling, not the pod.")
 
-    started = time.time()
+    # Poll *and* enforce the budget here rather than in a separate process:
+    # a watchdog you have to remember to start is one you will forget to start.
+    from huggingface_hub import HfApi
+
+    hub = HfApi(token=os.environ["HF_TOKEN"])
     while True:
         time.sleep(args.poll)
         try:
-            status = runpod.get_pod(pod_id)
-        except Exception as exc:  # pod gone == it terminated itself
-            print(f"  pod no longer queryable ({exc}); assuming it finished")
+            files = [f.rfilename for f in hub.model_info(args.repo).siblings]
+        except Exception:
+            files = []
+        pushed = any(f.endswith((".safetensors", ".bin")) for f in files)
+
+        uptime, gpu = _pod_state(pod_id)
+        if uptime is None:
+            print("  pod is gone; it terminated itself")
             break
-        if status is None:
-            print("  pod terminated")
+        print(f"  [{uptime / 60:6.1f}m] gpu={gpu}%  hub_files={len(files)}  model={pushed}")
+
+        if pushed:
+            _terminate(runpod, pod_id, "model is on the Hub")
             break
-        runtime = status.get("runtime") or {}
-        print(
-            f"  [{(time.time() - started) / 60:5.1f}m] {status.get('desiredStatus')} {runtime.get('uptimeInSeconds', 0)}s"
-        )
+        if uptime > args.max_hours * 3600:
+            _terminate(runpod, pod_id, f"uptime passed {args.max_hours}h")
+            break
+
     print(f"\nDone. Check https://huggingface.co/{args.repo}")
     return 0
 
