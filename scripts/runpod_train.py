@@ -66,6 +66,11 @@ def parse_args() -> argparse.Namespace:
         help="On failure, keep the pod alive this long (s) for inspection.",
     )
     p.add_argument(
+        "--attach",
+        default=None,
+        help="Supervise an already-running pod instead of creating one.",
+    )
+    p.add_argument(
         "--go", action="store_true", help="Actually create the pod. Without this, dry run."
     )
     p.add_argument("--poll", type=int, default=60, help="Seconds between status polls.")
@@ -282,6 +287,40 @@ def bootstrap(args) -> str:
     return script.strip()
 
 
+def _supervise(runpod, args, pod_id: str) -> int:
+    """Poll a pod and enforce the budget.
+
+    Kept here rather than in a separate watchdog process: a safety net you have
+    to remember to start separately is one you will forget to start.
+    """
+    from huggingface_hub import HfApi
+
+    hub = HfApi(token=os.environ["HF_TOKEN"])
+    while True:
+        time.sleep(args.poll)
+        try:
+            files = [f.rfilename for f in hub.model_info(args.repo).siblings]
+        except Exception:
+            files = []
+        pushed = any(f.endswith((".safetensors", ".bin")) for f in files)
+
+        uptime, gpu = _pod_state(pod_id)
+        if uptime is None:
+            print("  pod is gone; it terminated itself")
+            break
+        print(f"  [{uptime / 60:6.1f}m] gpu={gpu}%  hub_files={len(files)}  model={pushed}")
+
+        if pushed:
+            _terminate(runpod, pod_id, "model is on the Hub")
+            break
+        if uptime > args.max_hours * 3600:
+            _terminate(runpod, pod_id, f"uptime passed {args.max_hours}h")
+            break
+
+    print(f"\nDone. Check https://huggingface.co/{args.repo}")
+    return 0
+
+
 def _pod_state(pod_id: str) -> tuple[float | None, int | None]:
     """Pod uptime in seconds and GPU utilisation, or (None, None) if it is gone."""
     import requests
@@ -305,9 +344,11 @@ def _pod_state(pod_id: str) -> tuple[float | None, int | None]:
         pod = (response.json().get("data") or {}).get("pod")
     except Exception:
         return 0.0, None
-    if not pod or not pod.get("runtime"):
-        return None, None
-    runtime = pod["runtime"]
+    if pod is None:
+        return None, None  # genuinely gone
+    runtime = pod.get("runtime")
+    if not runtime:
+        return 0.0, None  # still starting: runtime is null until the container is up
     gpus = runtime.get("gpus") or [{}]
     return runtime.get("uptimeInSeconds") or 0, gpus[0].get("gpuUtilPercent")
 
@@ -343,6 +384,10 @@ def main() -> int:
     import runpod
 
     runpod.api_key = os.environ["RUNPOD_API_KEY"]
+
+    if args.attach:
+        print(f"Attaching to pod {args.attach}")
+        return _supervise(runpod, args, args.attach)
 
     print("Selecting GPU...")
     candidates = pick_gpu(runpod, args)
@@ -393,31 +438,7 @@ def main() -> int:
     pod_id = pod["id"]
     print(f"  pod {pod_id} created; polling every {args.poll}s. Ctrl-C stops polling, not the pod.")
 
-    # Poll *and* enforce the budget here rather than in a separate process:
-    # a watchdog you have to remember to start is one you will forget to start.
-    from huggingface_hub import HfApi
-
-    hub = HfApi(token=os.environ["HF_TOKEN"])
-    while True:
-        time.sleep(args.poll)
-        try:
-            files = [f.rfilename for f in hub.model_info(args.repo).siblings]
-        except Exception:
-            files = []
-        pushed = any(f.endswith((".safetensors", ".bin")) for f in files)
-
-        uptime, gpu = _pod_state(pod_id)
-        if uptime is None:
-            print("  pod is gone; it terminated itself")
-            break
-        print(f"  [{uptime / 60:6.1f}m] gpu={gpu}%  hub_files={len(files)}  model={pushed}")
-
-        if pushed:
-            _terminate(runpod, pod_id, "model is on the Hub")
-            break
-        if uptime > args.max_hours * 3600:
-            _terminate(runpod, pod_id, f"uptime passed {args.max_hours}h")
-            break
+    return _supervise(runpod, args, pod_id)
 
     print(f"\nDone. Check https://huggingface.co/{args.repo}")
     return 0
