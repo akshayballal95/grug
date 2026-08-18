@@ -75,6 +75,12 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--poll", type=int, default=60, help="Seconds between status polls.")
     p.add_argument(
+        "--start-timeout",
+        type=float,
+        default=10.0,
+        help="Give up if the container has not started within this many minutes.",
+    )
+    p.add_argument(
         "--max-hours",
         type=float,
         default=8.0,
@@ -296,6 +302,9 @@ def _supervise(runpod, args, pod_id: str) -> int:
     from huggingface_hub import HfApi
 
     hub = HfApi(token=os.environ["HF_TOKEN"])
+    # RunPod sometimes rents a host whose container never starts: desiredStatus
+    # reads RUNNING while runtime stays null, and it bills the whole time.
+    waited_for_start = 0.0
     while True:
         time.sleep(args.poll)
         try:
@@ -309,6 +318,19 @@ def _supervise(runpod, args, pod_id: str) -> int:
             print("  pod is gone; it terminated itself")
             break
         print(f"  [{uptime / 60:6.1f}m] gpu={gpu}%  hub_files={len(files)}  model={pushed}")
+
+        if uptime == 0:
+            waited_for_start += args.poll
+            if waited_for_start > args.start_timeout * 60:
+                _terminate(
+                    runpod,
+                    pod_id,
+                    f"container never started within {args.start_timeout} min",
+                )
+                print("  the host was probably bad; relaunch to get a different one")
+                return 1
+        else:
+            waited_for_start = 0.0
 
         if pushed:
             _terminate(runpod, pod_id, "model is on the Hub")
