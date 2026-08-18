@@ -11,6 +11,7 @@ import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from typing import Any
 
 __all__ = ["ANSWER_PROMPT", "LLMClient", "StubClient"]
 
@@ -50,7 +51,15 @@ class LLMClient:
 
     def one(self, context: str, question: str) -> str:
         """Answer a single question, returning "" if every attempt fails."""
-        prompt = ANSWER_PROMPT.format(context=context, question=question)
+        return self.complete(ANSWER_PROMPT.format(context=context, question=question))
+
+    def complete(self, prompt: str) -> str:
+        """Send a prompt verbatim.
+
+        Distillation needs this: routing a compression instruction through the
+        QA template asks the model to answer an empty question *about* the
+        instruction, which is not the same task at all.
+        """
         for attempt in range(self.retries):
             try:
                 response = self._litellm.completion(
@@ -70,10 +79,17 @@ class LLMClient:
 
     def many(self, pairs: list[tuple[str, str]]) -> list[str]:
         """Answer (context, question) pairs concurrently, preserving order."""
-        if not pairs:
+        return self._parallel(lambda p: self.one(*p), pairs)
+
+    def complete_many(self, prompts: list[str]) -> list[str]:
+        """Send prompts verbatim, concurrently, preserving order."""
+        return self._parallel(self.complete, prompts)
+
+    def _parallel(self, fn: Any, items: list[Any]) -> list[str]:
+        if not items:
             return []
         with ThreadPoolExecutor(max_workers=self.workers) as pool:
-            return list(pool.map(lambda p: self.one(*p), pairs))
+            return list(pool.map(fn, items))
 
 
 @dataclass
@@ -88,8 +104,14 @@ class StubClient:
     def one(self, context: str, question: str) -> str:
         return " ".join(context.split()[: self.words])
 
+    def complete(self, prompt: str) -> str:
+        return " ".join(prompt.split()[: self.words])
+
     def many(self, pairs: list[tuple[str, str]]) -> list[str]:
         return [self.one(c, q) for c, q in pairs]
+
+    def complete_many(self, prompts: list[str]) -> list[str]:
+        return [self.complete(p) for p in prompts]
 
 
 def credentials_present() -> dict[str, bool]:

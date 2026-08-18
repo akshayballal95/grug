@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import statistics
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from ..verify import find_numbers, is_negation
@@ -25,6 +26,7 @@ __all__ = [
     "TEACHER_INSTRUCTION",
     "TeacherScore",
     "compress_with_teacher",
+    "generate_corpus",
     "score_teacher",
 ]
 
@@ -101,7 +103,7 @@ class TeacherScore:
 
 def compress_with_teacher(text: str, client: Any) -> str:
     """Ask a teacher to compress one passage under the five conditions."""
-    return client.one(TEACHER_INSTRUCTION.format(text=text), "")
+    return client.complete(TEACHER_INSTRUCTION.format(text=text))
 
 
 def _out_of_order_fraction(original: list[str], compressed: list[str]) -> float:
@@ -200,3 +202,86 @@ def score_teacher(model: str, originals: list[str], samples: list[list[str]]) ->
         self_consistency=mean(consistencies) if consistencies else 1.0,
         failures=failures,
     )
+
+
+def generate_corpus(
+    passages: list[str],
+    client: Any,
+    out_dir: str | Path,
+    *,
+    instruction: str = "negation",
+    batch_size: int = 64,
+    progress: bool = True,
+) -> dict[str, Any]:
+    """Compress every passage with a teacher and write an alignable corpus.
+
+    Written incrementally, one batch at a time: a long run against a paid API
+    must not lose everything it has bought if it dies at 90%. Re-running skips
+    whatever is already on disk.
+
+    Produces ``pairs.jsonl`` (the raw teacher output, for re-derivation) and
+    ``labels.jsonl`` (per-word keep/drop, ready for ``grug train run``).
+    """
+    import json
+
+    directory = Path(out_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+    pairs_path, labels_path = directory / "pairs.jsonl", directory / "labels.jsonl"
+
+    done = 0
+    if pairs_path.exists():
+        done = sum(1 for line in pairs_path.open(encoding="utf-8") if line.strip())
+        if progress and done:
+            print(f"  resuming: {done} passages already written", flush=True)
+
+    template = INSTRUCTIONS[instruction]
+    kept = failures = 0
+    for start in range(done, len(passages), batch_size):
+        batch = passages[start : start + batch_size]
+        outputs = client.complete_many([template.format(text=text) for text in batch])
+
+        with (
+            pairs_path.open("a", encoding="utf-8") as raw,
+            labels_path.open("a", encoding="utf-8") as labelled,
+        ):
+            for original, compressed in zip(batch, outputs, strict=True):
+                raw.write(
+                    json.dumps(
+                        {
+                            "original": original,
+                            "compressed": compressed,
+                            "instruction": instruction,
+                        }
+                    )
+                    + "\n"
+                )
+                if not compressed or not compressed.strip():
+                    failures += 1
+                    continue
+                stats = annotate(original, compressed)
+                labelled.write(
+                    json.dumps(
+                        {
+                            "words": stats.words,
+                            "labels": [int(x) for x in stats.labels],
+                            "variation_rate": round(stats.variation_rate, 4),
+                            "alignment_gap": round(stats.alignment_gap, 4),
+                        }
+                    )
+                    + "\n"
+                )
+                kept += 1
+        if progress:
+            print(
+                f"  {min(start + batch_size, len(passages))}/{len(passages)} passages "
+                f"({kept} labelled, {failures} failed)",
+                flush=True,
+            )
+
+    return {
+        "passages": len(passages),
+        "labelled": kept,
+        "failed": failures,
+        "instruction": instruction,
+        "dir": str(directory),
+    }

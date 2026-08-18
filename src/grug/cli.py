@@ -440,6 +440,54 @@ def train_prepare(
     sys.stdout.write("\n")
 
 
+@train_app.command("generate")
+def train_generate(
+    model: Annotated[str, typer.Option("--model", "-m", help="litellm model id of the teacher.")],
+    out: Annotated[
+        str, typer.Option("--out", "-o", help="Directory for the corpus.")
+    ] = "data/distilled",
+    instruction: Annotated[
+        str, typer.Option("--instruction", help="Prompt variant: baseline or negation.")
+    ] = "negation",
+    limit: Annotated[
+        int | None,
+        typer.Option("--limit", help="Stop after N passages. Omit for the whole corpus."),
+    ] = None,
+    workers: Annotated[int, typer.Option("--workers", min=1)] = 16,
+    temperature: Annotated[float, typer.Option("--temperature")] = 0.0,
+    dataset: Annotated[
+        str, typer.Option("--dataset", help="Source of passages to compress.")
+    ] = "microsoft/MeetingBank-LLMCompressed",
+) -> None:
+    """Re-distil a training corpus with a modern teacher.
+
+    Writes incrementally and resumes: a long paid run must not lose what it has
+    already bought. Re-run the same command to continue where it stopped.
+    """
+    distill = _training("distill")
+    llm = _benchmark("llm")
+
+    try:
+        import datasets
+    except ImportError as exc:
+        _err("error: needs 'datasets': pip install 'grug[train]'")
+        raise typer.Exit(EXIT_ERROR) from exc
+
+    rows = datasets.load_dataset(dataset, split="train")
+    if limit is not None:
+        rows = rows.select(range(min(limit, len(rows))))
+    passages = [r["prompt"] for r in rows if r.get("prompt")]
+    _err(f"{len(passages)} passages, teacher={model}, instruction={instruction}")
+
+    client = llm.LLMClient(model=model, workers=workers, temperature=temperature, max_tokens=8192)
+    summary = distill.generate_corpus(passages, client, out, instruction=instruction)
+    _err(
+        f"labelled {summary['labelled']}/{summary['passages']} ({summary['failed']} failed) -> {out}"
+    )
+    json.dump(summary, sys.stdout, indent=2)
+    sys.stdout.write("\n")
+
+
 @train_app.command("distill")
 def train_distill(
     models: Annotated[
