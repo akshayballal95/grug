@@ -111,29 +111,61 @@ print(urllib.request.urlopen(req, timeout=30).read().decode()[:200])
 
 # Placeholders rather than an f-string: this text is full of shell ${} and JSON
 # braces, and escaping them all is how bugs get in.
+# Placeholders rather than an f-string: this text is full of shell ${} and JSON
+# braces, and escaping them all is how bugs get in.
+#
+# Written to be safely re-run. RunPod restarts a container whose command exits,
+# and /workspace survives the restart, so every stage must tolerate having
+# already happened -- a bare `git clone` fails the second time and takes the
+# whole run down with it.
 _BOOTSTRAP = """
 set -euxo pipefail
+mkdir -p /workspace
+exec > >(tee -a /workspace/bootstrap.log) 2>&1
 export DEBIAN_FRONTEND=noninteractive
-export HF_HUB_ENABLE_HF_TRANSFER=0
 
 cat > /tmp/terminate.py <<'TERMINATE_EOF'
 @TERMINATE@
 TERMINATE_EOF
 
-# Any exit path terminates the pod. A crashed run must not bill all day.
+cat > /tmp/upload_log.py <<'LOG_EOF'
+import os, pathlib
+from huggingface_hub import HfApi
+try:
+    api = HfApi(token=os.environ["HF_TOKEN"])
+    api.create_repo("@HFREPO@", repo_type="model", private=@PRIVATE@, exist_ok=True)
+    api.upload_file(
+        path_or_fileobj="/workspace/bootstrap.log",
+        path_in_repo="bootstrap.log", repo_id="@HFREPO@", repo_type="model",
+        commit_message="bootstrap log",
+    )
+    print("LOG UPLOADED")
+except Exception as exc:
+    print("log upload failed:", exc)
+LOG_EOF
+
+# Always ship the log somewhere retrievable, then stop billing.
 cleanup() {
   code=$?
   echo "GRUG_EXIT status=$code"
+  python /tmp/upload_log.py || true
   python /tmp/terminate.py || true
 }
 trap cleanup EXIT
 
-apt-get update -qq && apt-get install -y -qq git
-git clone --depth 1 --branch @BRANCH@ @REPO_URL@ /workspace/grug
+# A restart must not re-run a stage that already succeeded.
+if [ ! -f /workspace/.installed ]; then
+  apt-get update -qq && apt-get install -y -qq git
+  rm -rf /workspace/grug
+  git clone --depth 1 --branch @BRANCH@ @REPO_URL@ /workspace/grug
+  pip install --no-cache-dir -e /workspace/grug'[train]'
+  touch /workspace/.installed
+fi
 cd /workspace/grug
-pip install --no-cache-dir -e '.[train]'
 
-grug train prepare --out /workspace/data
+if [ ! -f /workspace/data/train.jsonl ]; then
+  grug train prepare --out /workspace/data
+fi
 
 grug train run \
   --data /workspace/data --out /workspace/ckpt \
