@@ -53,8 +53,8 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def pick_gpu(runpod, args) -> dict:
-    """Cheapest community-cloud GPU with enough VRAM, unless one was named.
+def pick_gpu(runpod, args) -> list[dict]:
+    """Affordable community GPUs with enough VRAM, cheapest first.
 
     ``get_gpus()`` carries no pricing, so each candidate needs its own lookup.
     """
@@ -78,19 +78,17 @@ def pick_gpu(runpod, args) -> dict:
     priced.sort(key=lambda g: (g["price"], -g["vram"]))
 
     if args.gpu:
-        for gpu in priced:
-            if gpu["id"] == args.gpu:
-                return gpu
-        sys.exit(f"error: --gpu {args.gpu!r} not available with >={MIN_VRAM_GB}GB")
+        priced = [g for g in priced if g["id"] == args.gpu]
+        if not priced:
+            sys.exit(f"error: --gpu {args.gpu!r} not available with >={MIN_VRAM_GB}GB")
+    priced = [g for g in priced if g["price"] <= args.max_price]
     if not priced:
-        sys.exit("error: no community GPU with enough VRAM is currently available")
-    if priced[0]["price"] > args.max_price:
-        sys.exit(f"error: cheapest is ${priced[0]['price']}/hr, above --max-price {args.max_price}")
+        sys.exit(f"error: nothing with >={MIN_VRAM_GB}GB under ${args.max_price}/hr")
 
-    print(f"  cheapest with >={MIN_VRAM_GB}GB:")
-    for gpu in priced[:6]:
+    print(f"  affordable with >={MIN_VRAM_GB}GB:")
+    for gpu in priced[:8]:
         print(f"    {gpu['id']:<32} {gpu['vram']:>3}GB  ${gpu['price']:.3f}/hr")
-    return priced[0]
+    return priced
 
 
 _TERMINATE = """
@@ -215,7 +213,8 @@ def main() -> int:
     runpod.api_key = os.environ["RUNPOD_API_KEY"]
 
     print("Selecting GPU...")
-    gpu = pick_gpu(runpod, args)
+    candidates = pick_gpu(runpod, args)
+    gpu = candidates[0]
     examples = 31775
     est_hours = args.epochs * examples / 70 / 3600  # ~70 ex/s on a 24GB card
     print(
@@ -230,17 +229,32 @@ def main() -> int:
         print(textwrap.indent(bootstrap(args), "  "))
         return 0
 
-    pod = runpod.create_pod(
-        name=f"grug-train-{args.model.split('/')[-1]}",
-        image_name=args.image,
-        gpu_type_id=gpu["id"],
-        cloud_type="COMMUNITY",
-        container_disk_in_gb=40,
-        volume_in_gb=0,
-        min_memory_in_gb=16,
-        docker_args=_docker_args(bootstrap(args)),
-        env={"HF_TOKEN": os.environ["HF_TOKEN"], "RUNPOD_API_KEY": os.environ["RUNPOD_API_KEY"]},
-    )
+    pod = None
+    for candidate in candidates:
+        try:
+            pod = runpod.create_pod(
+                name=f"grug-train-{args.model.split('/')[-1]}",
+                image_name=args.image,
+                gpu_type_id=candidate["id"],
+                cloud_type="COMMUNITY",
+                container_disk_in_gb=40,
+                volume_in_gb=0,
+                min_memory_in_gb=16,
+                docker_args=_docker_args(bootstrap(args)),
+                env={
+                    "HF_TOKEN": os.environ["HF_TOKEN"],
+                    "RUNPOD_API_KEY": os.environ["RUNPOD_API_KEY"],
+                },
+            )
+            gpu = candidate
+            break
+        except Exception as exc:
+            # Capacity comes and goes; a full GPU type is not a fatal error.
+            print(f"  {candidate['id']}: {str(exc)[:70]}")
+    if pod is None:
+        sys.exit("error: every affordable GPU type is out of capacity right now")
+    print(f"  launched on {gpu['id']} at ${gpu['price']:.3f}/hr")
+
     pod_id = pod["id"]
     print(f"  pod {pod_id} created; polling every {args.poll}s. Ctrl-C stops polling, not the pod.")
 
