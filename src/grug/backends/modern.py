@@ -142,6 +142,7 @@ class ModernBackend(CompressorBackend):
 
         self._resolved_device = self._resolve_device()
         auth = {"token": self.token} if self.token else {}
+        self._check_token()
         self._tokenizer = AutoTokenizer.from_pretrained(
             self.model_name, **auth, **self.model_kwargs
         )
@@ -165,6 +166,29 @@ class ModernBackend(CompressorBackend):
         self._model = model
         self._preserve_id = _preserve_label_id(model.config)
         return self._tokenizer, self._model
+
+    def _check_token(self) -> None:
+        """Say plainly that a token was rejected.
+
+        The hub reports a stale token as "Repository Not Found" plus "Invalid
+        username or password", which reads like a wrong repo id rather than a
+        credential that needs replacing.
+        """
+        if not self.token:
+            return
+        try:
+            from huggingface_hub import HfApi
+
+            HfApi(token=self.token).whoami()
+        except Exception as exc:
+            source = (
+                "HF_TOKEN" if os.environ.get("HF_TOKEN") == self.token else "the token argument"
+            )
+            raise ValueError(
+                f"the Hugging Face token from {source} was rejected ({type(exc).__name__}). "
+                "It is probably expired or revoked; replace it and retry. A private "
+                "checkpoint will otherwise look like a missing repository."
+            ) from exc
 
     @property
     def model(self) -> Any:

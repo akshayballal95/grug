@@ -204,6 +204,10 @@ _PH_RE_TEMPLATE = _PH_PREFIX + "%s" + r"(\d+)" + _PH_SUFFIX
 PLACEHOLDER_RE = re.compile(_PH_RE_TEMPLATE % r"[a-z]", re.IGNORECASE)
 
 _BLOCK_SPLIT_RE = re.compile(r"(\n[ \t]*\n\s*)")
+#: A hard-wrapped paragraph keeps every line but the last near the wrap column.
+#: Below this, the line breaks are more likely deliberate than cosmetic.
+SOFT_WRAP_MIN = 45
+
 _BLANK_LINE_RE = re.compile(r"\n[ \t]*\n")
 _NEWLINE_RE = re.compile(r"\n")
 _WORD_SPLIT_RE = re.compile(r"\s+")
@@ -432,7 +436,7 @@ def chunk_document(
         if is_verbatim:
             chunks.append(Chunk(text=segment, sep="", compressible=False))
             continue
-        chunks.extend(_chunk_prose(segment, max_tokens, spans))
+        chunks.extend(_chunk_prose(segment, max_tokens, spans, preserve_markdown))
     return chunks
 
 
@@ -570,7 +574,9 @@ def _segments_from_ranges(text: str, ranges: list[tuple[int, int]]) -> list[tupl
     return segments or [(text, False)]
 
 
-def _chunk_prose(text: str, max_tokens: int, spans: list[re.Pattern[str]]) -> list[Chunk]:
+def _chunk_prose(
+    text: str, max_tokens: int, spans: list[re.Pattern[str]], reflow: bool = True
+) -> list[Chunk]:
     """Chunk a prose segment, cutting at the coarsest boundary that fits."""
     if not text.strip():
         return [Chunk(text=text, sep="", compressible=False)] if text else []
@@ -579,7 +585,7 @@ def _chunk_prose(text: str, max_tokens: int, spans: list[re.Pattern[str]]) -> li
     lead = text[: len(text) - len(text.lstrip())]
     trail = text[len(text.rstrip()) :]
 
-    units = _to_units(text.strip(), max_tokens)
+    units = _to_units(text.strip(), max_tokens, reflow)
     packed = _pack(units, max_tokens)
 
     chunks: list[Chunk] = []
@@ -597,7 +603,7 @@ def _chunk_prose(text: str, max_tokens: int, spans: list[re.Pattern[str]]) -> li
     return chunks
 
 
-def _to_units(text: str, max_tokens: int) -> list[tuple[str, str]]:
+def _to_units(text: str, max_tokens: int, reflow: bool = True) -> list[tuple[str, str]]:
     """Break prose into (text, following-separator) pairs no larger than needed.
 
     Recursion order is paragraph -> line -> sentence -> words. Each level only
@@ -616,6 +622,8 @@ def _to_units(text: str, max_tokens: int) -> list[tuple[str, str]]:
                 else:
                     units.append(("", sep))
             continue
+        if reflow:
+            block = _unwrap_soft_breaks(block)
         pieces = _split_block(block, max_tokens)
         for offset, (piece, piece_sep) in enumerate(pieces):
             is_last = offset == len(pieces) - 1
@@ -626,6 +634,33 @@ def _to_units(text: str, max_tokens: int) -> list[tuple[str, str]]:
 def _extend_sep(units: list[tuple[str, str]], sep: str) -> None:
     text, existing = units[-1]
     units[-1] = (text, existing + sep)
+
+
+def _unwrap_soft_breaks(block: str) -> str:
+    """Join a hard-wrapped paragraph back into one line.
+
+    A single newline inside a CommonMark paragraph is a *soft* break: it renders
+    as a space and carries no meaning. Treating it as structure means a source
+    wrapped at 80 columns comes back as ragged half-lines, because every break
+    is preserved while the text between them halves.
+
+    Blocks where any line opens with a markdown marker -- lists, blockquotes,
+    tables -- are left alone: there the newline really is structure.
+    """
+    lines = block.split("\n")
+    if len(lines) < 2 or any(LINE_PREFIX_RE.match(line) for line in lines):
+        return block
+    # Verbatim extraction can leave a code fragment behind -- the two lines
+    # above a detected run, say -- and joining those corrupts the source.
+    if looks_like_code(block):
+        return block
+    # Hard wrapping is recognisable by its shape: every line but the last runs
+    # close to the wrap column. Short lines are somebody's deliberate layout
+    # (a YAML fragment, an address block) and are left alone.
+    body = [line for line in lines[:-1] if line.strip()]
+    if not body or min(len(line.rstrip()) for line in body) < SOFT_WRAP_MIN:
+        return block
+    return " ".join(line.strip() for line in lines if line.strip())
 
 
 def _split_block(block: str, max_tokens: int) -> list[tuple[str, str]]:
