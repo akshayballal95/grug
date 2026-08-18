@@ -110,6 +110,9 @@ req = urllib.request.Request(
     headers={
         "Content-Type": "application/json",
         "Authorization": "Bearer " + os.environ["RUNPOD_API_KEY"],
+        # Required: the edge rejects the default "Python-urllib/x.y" agent with
+        # a 403, which silently left pods billing.
+        "User-Agent": "grug-train/0.1",
     },
 )
 print(urllib.request.urlopen(req, timeout=30).read().decode()[:200])
@@ -135,8 +138,15 @@ cat > /tmp/terminate.py <<'TERMINATE_EOF'
 TERMINATE_EOF
 
 cat > /tmp/upload_log.py <<'LOG_EOF'
-import os, pathlib
-from huggingface_hub import HfApi
+import os, pathlib, subprocess, sys
+
+# This runs on any exit path, including one before `pip install` finished, so
+# the dependency it needs may not be there yet.
+try:
+    from huggingface_hub import HfApi
+except ImportError:
+    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "huggingface_hub"], check=False)
+    from huggingface_hub import HfApi
 try:
     api = HfApi(token=os.environ["HF_TOKEN"])
     api.create_repo("@HFREPO@", repo_type="model", private=@PRIVATE@, exist_ok=True)
