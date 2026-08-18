@@ -131,6 +131,12 @@ def compress(
         str | None,
         typer.Option("--device", help="Backend device hint, e.g. cpu, cuda, mps, auto."),
     ] = None,
+    model: Annotated[
+        str | None,
+        typer.Option(
+            "--model", help="Checkpoint for backends that take one, e.g. --backend modern."
+        ),
+    ] = None,
     question: Annotated[
         str | None,
         typer.Option(
@@ -169,7 +175,7 @@ def compress(
         raise typer.Exit(EXIT_ERROR)
 
     try:
-        compressor = _build_compressor(backend, device, verify, chunk_tokens, question)
+        compressor = _build_compressor(backend, device, verify, chunk_tokens, question, model)
     except (BackendNotFoundError, MissingDependencyError, TypeError) as exc:
         _err(f"error: {exc}")
         raise typer.Exit(EXIT_ERROR) from exc
@@ -239,6 +245,7 @@ def _build_compressor(
     verify: bool,
     chunk_tokens: int,
     question: str | None = None,
+    model: str | None = None,
 ) -> Any:
     """Resolve the backend and wrap it. A question only steers an unnamed one."""
     from . import Compressor
@@ -247,9 +254,30 @@ def _build_compressor(
     kwargs: dict[str, Any] = {}
     if device is not None:
         kwargs["device"] = device
-    if kwargs and not _accepts(get_backend_class(name), *kwargs):
-        raise TypeError(f"backend {name!r} does not accept --device")
+    if model is not None:
+        kwargs["model_name"] = model
+    cls = get_backend_class(name)
+    required = _required_options(cls)
+    if required - set(kwargs):
+        missing = ", ".join(
+            sorted("--model" if r == "model_name" else f"--{r}" for r in required - set(kwargs))
+        )
+        raise TypeError(f"backend {name!r} needs {missing} (see 'grug backends')")
+    if kwargs and not _accepts(cls, *kwargs):
+        flags = ", ".join("--model" if k == "model_name" else f"--{k}" for k in kwargs)
+        raise TypeError(f"backend {name!r} does not accept {flags}")
     return Compressor(name, verify=verify, chunk_tokens=chunk_tokens, **kwargs)
+
+
+def _required_options(cls: type) -> set[str]:
+    """Constructor keywords with no default: the caller must supply them."""
+    import inspect
+
+    return {
+        name
+        for name, param in inspect.signature(cls.__init__).parameters.items()
+        if param.default is inspect.Parameter.empty and param.kind is inspect.Parameter.KEYWORD_ONLY
+    }
 
 
 def _accepts(cls: type, *names: str) -> bool:

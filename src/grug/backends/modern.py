@@ -25,7 +25,11 @@ from ..verify import NEGATION_FORCE_TOKENS, is_negation
 __all__ = ["DEFAULT_MODEL", "ModernBackend"]
 
 #: Trained by ``grug train``; see the reproduction guide in the README.
-DEFAULT_MODEL = "answerdotai/ModernBERT-base"
+#: No default on purpose. A base encoder like ``answerdotai/ModernBERT-base``
+#: loads happily with a randomly initialised classification head and then scores
+#: tokens at random, which looks like a working compressor and is not one.
+#: Train one with ``grug train`` or pass a checkpoint that has a trained head.
+DEFAULT_MODEL: str | None = None
 
 DEFAULT_FORCE_TOKENS: tuple[str, ...] = ("\n", "?", *NEGATION_FORCE_TOKENS)
 
@@ -57,14 +61,14 @@ class ModernBackend(CompressorBackend):
     """Token classification with a modern 8k-context encoder."""
 
     name = "modern"
-    description = "Token classification on a modern encoder (8k context). Needs torch."
+    description = "Token classification, any modern encoder. Needs torch and --model."
     extra = "modern"
     generative = False
 
     def __init__(
         self,
         *,
-        model_name: str = DEFAULT_MODEL,
+        model_name: str,
         device: str = "auto",
         force_tokens: list[str] | tuple[str, ...] | None = None,
         force_reserve_digit: bool = True,
@@ -74,7 +78,8 @@ class ModernBackend(CompressorBackend):
     ) -> None:
         """
         Args:
-            model_name: A token-classification checkpoint with a preserve/discard head.
+            model_name: A token-classification checkpoint with a *trained*
+                preserve/discard head. A bare encoder is rejected.
             device: ``cpu``, ``cuda``, ``mps``, or ``auto``.
             force_tokens: Words the compressor may never drop.
             force_reserve_digit: Never drop a word containing a digit.
@@ -133,9 +138,17 @@ class ModernBackend(CompressorBackend):
             raise RuntimeError(
                 f"{self.model_name!r} has no fast tokenizer; word alignment needs word_ids()"
             )
-        model = AutoModelForTokenClassification.from_pretrained(
-            self.model_name, **self.model_kwargs
+        model, loading_info = AutoModelForTokenClassification.from_pretrained(
+            self.model_name, output_loading_info=True, **self.model_kwargs
         )
+        untrained = [k for k in loading_info.get("missing_keys", []) if "classifier" in k]
+        if untrained:
+            raise ValueError(
+                f"{self.model_name!r} has no trained classification head "
+                f"(missing {', '.join(sorted(untrained))}). It is a base encoder, so its "
+                "scores would be random. Train one with 'grug train run --model "
+                f"{self.model_name}' and pass the resulting checkpoint."
+            )
         model.eval()
         model.to(self._resolved_device)
         self._model = model
