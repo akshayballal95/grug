@@ -130,6 +130,7 @@ pattern-matched, so structure survives compression intact:
 | Blank lines | Hard chunk boundaries, so no backend can collapse a paragraph break |
 | Inline code spans and URLs | Swapped for opaque placeholders |
 | Numbers with internal separators (`9.6`, `1,250`, `3-5`) | Protected — backends keep the digits but drop the punctuation between them |
+| Identifiers with internal separators (`us-east-1`, `v2.1.0-rc3`, `text/plain`) | Protected — same failure: `node-07` comes back as `node 07`, a different host. A plain hyphenated word (`sign-off`) is left compressible |
 
 Using a real parser matters: a pipe inside a fence is not a table row, an
 indented block is still code, and a code span may wrap across a line. The
@@ -246,10 +247,15 @@ grug handles this in two places:
 2. **A verifier that checks after the fact.** `grug.verify(original, compressed)`
    returns human-readable warnings, most severe first:
    - **Negation loss** — a negation cue that appears fewer times than it did.
+   - **Negation scope loss** — a cue that outlived the word it applied to, so it
+     now negates whatever the compressor left beside it. Function and degree
+     words are skipped when looking for the scope.
    - **Number loss** — an integer, decimal, percentage, or version that vanished
-     (`1,250` and `1250` count as the same number).
+     (`1,250` and `1250` count as one number; `v2` and `2` count as two).
    - **Entity loss** — a capitalised multiword name or acronym with none of its
      words left standing.
+   - **Entity ambiguity** — two names reduced to the same surviving words
+     ("Bank of America" and "Bank of England" both clipped to "Bank").
 
    There is **no NER model** here, and no ML anywhere outside the `lingua2`
    backend. Entity detection is regex over capitalised runs, name connectors

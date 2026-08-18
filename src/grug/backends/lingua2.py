@@ -30,6 +30,7 @@ DEFAULT_MODEL = "microsoft/llmlingua-2-bert-base-multilingual-cased-meetingbank"
 #: negations are the reason this backend is safe to use at aggressive rates.
 DEFAULT_FORCE_TOKENS: tuple[str, ...] = ("\n", "?", *NEGATION_FORCE_TOKENS)
 
+
 @register_backend
 class Lingua2Backend(CompressorBackend):
     """Token-classification compression via ``llmlingua.PromptCompressor``."""

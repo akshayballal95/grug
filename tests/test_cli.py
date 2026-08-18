@@ -351,3 +351,34 @@ def test_directory_input_says_so(cli_command, tmp_path):
     result = run(cli_command, "compress", *RULES, str(tmp_path))
     assert result.returncode == ERROR
     assert "is a directory" in result.stderr
+
+
+# -- question conditioning --------------------------------------------------
+
+
+def test_compress_help_documents_the_question_flag(cli_command):
+    out = run(cli_command, "compress", "--help")
+    assert "--question" in out.stdout
+
+
+def test_backends_lists_the_question_aware_backend(cli_command):
+    out = run(cli_command, "backends")
+    assert "longlingua" in out.stdout
+
+
+def test_a_question_on_a_plain_backend_warns_and_exits_two(cli_command, doc):
+    """Silently dropping the question would be the worst of the options."""
+    out = run(cli_command, "compress", str(doc), *RULES, "--question", "does it include tax?")
+    assert "question ignored" in out.stderr
+    assert "rules" in out.stderr
+    assert out.returncode == WARNINGS
+
+
+def test_the_short_question_flag_works(cli_command, doc):
+    out = run(cli_command, "compress", str(doc), *RULES, "-Q", "does it include tax?")
+    assert "question ignored" in out.stderr
+
+
+def test_no_question_produces_no_question_warning(cli_command, doc):
+    out = run(cli_command, "compress", str(doc), *RULES)
+    assert "question ignored" not in out.stderr

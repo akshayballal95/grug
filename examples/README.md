@@ -10,7 +10,7 @@ python examples/rules_backend.py
 | --- | --- | --- |
 | [`rules_backend.py`](rules_backend.py) | `pip install grug` | The dependency-free backend: rate sweep, what it refuses to drop, batching, tuning knobs. |
 | [`lingua2_backend.py`](lingua2_backend.py) | `pip install 'grug[lingua2]'` | The token-classification backend: model load, rate sweep, negation survival under pressure. Prints an install hint and exits 0 if the extra is missing. |
-| [`compare_backends.py`](compare_backends.py) | either | Every installed backend on the same document, side by side — tokens, ratio, seconds, warnings. |
+| [`compare_backends.py`](compare_backends.py) | either | Every installed backend on the same document, side by side — tokens, ratio, seconds, warnings. Question-aware backends sit out unless `--with-question` gives them one. |
 | [`faithfulness.py`](faithfulness.py) | either | Why the verifier exists: the negation problem, the three checks, and load-bearing sentences run through every backend. |
 
 `sample_doc.md` is the shared input — a short incident report with a fenced code
@@ -25,10 +25,13 @@ the grug API.
 ```bash
 python examples/lingua2_backend.py --device cpu --rate 0.33
 python examples/compare_backends.py --rates 0.7 0.5 0.3
+python examples/compare_backends.py --with-question "which accounts were affected?"
 ```
 
 The first `lingua2` run downloads the checkpoint (a few hundred MB) and takes a
 minute; later runs load from the Hugging Face cache in a second or two.
+`--with-question` pulls in the `longlingua` backend, whose default checkpoint is
+a few GB — that download is why it is opt-in.
 
 ## The same thing from the CLI
 

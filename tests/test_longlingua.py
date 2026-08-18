@@ -16,6 +16,7 @@ from importlib.machinery import ModuleSpec
 
 import pytest
 
+from conftest import losses
 from grug.backends.longlingua import DEFAULT_MODEL, LongLinguaBackend
 from grug.base import CompressorBackend, MissingDependencyError
 
@@ -65,14 +66,26 @@ def _fake_module(name: str):
 @pytest.fixture
 def fake_llmlingua(monkeypatch):
     """Stub llmlingua/torch/transformers, record the call, replay a set output."""
-    recorder: dict = {"init": None, "call": None, "output": "compressed text"}
+    recorder: dict = {
+        "init": None,
+        "call": None,
+        "output": "compressed text",
+        "token_length": 42,
+        "raises": None,
+    }
 
     class FakePromptCompressor:
         def __init__(self, **kwargs):
             recorder["init"] = kwargs
 
+        def get_token_length(self, text, add_special_tokens=True, use_oai_tokenizer=False):
+            recorder["add_special_tokens"] = add_special_tokens
+            return recorder["token_length"]
+
         def compress_prompt(self, context, **kwargs):
             recorder["call"] = {"context": context, **kwargs}
+            if recorder["raises"] is not None:
+                raise recorder["raises"]
             return {
                 "compressed_prompt": recorder["output"],
                 "origin_tokens": 20,
@@ -86,9 +99,7 @@ def fake_llmlingua(monkeypatch):
 
     torch = _fake_module("torch")
     torch.cuda = types.SimpleNamespace(is_available=lambda: False)
-    torch.backends = types.SimpleNamespace(
-        mps=types.SimpleNamespace(is_available=lambda: False)
-    )
+    torch.backends = types.SimpleNamespace(mps=types.SimpleNamespace(is_available=lambda: False))
 
     monkeypatch.setitem(sys.modules, "llmlingua", llmlingua)
     monkeypatch.setitem(sys.modules, "torch", torch)
@@ -171,9 +182,7 @@ def test_a_lone_sentence_initial_capital_is_not_pinned_as_an_entity(fake_llmling
 
 def test_a_dropped_placeholder_is_pinned_back(fake_llmlingua):
     fake_llmlingua["output"] = "see for details"
-    result = LongLinguaBackend(device="cpu").compress(
-        "see GRUGSPANc0X for details", rate=0.5
-    )
+    result = LongLinguaBackend(device="cpu").compress("see GRUGSPANc0X for details", rate=0.5)
     assert result.text == "see GRUGSPANc0X for details"
 
 
@@ -184,8 +193,11 @@ def test_force_tokens_are_not_sent_to_a_model_that_ignores_them(fake_llmlingua):
 
 
 def test_output_is_detokenised(fake_llmlingua):
+    """Repair runs before snapping: "3 - 5" would not match the "3-5" it came from."""
     fake_llmlingua["output"] = "we ran 3 - 5 cycles , it doesn ' t matter"
-    result = LongLinguaBackend(device="cpu").compress("we ran 3-5 cycles", rate=0.5)
+    result = LongLinguaBackend(device="cpu").compress(
+        "we ran 3-5 cycles and it doesn't matter", rate=0.5
+    )
     assert result.text == "we ran 3-5 cycles, it doesn't matter"
 
 
@@ -259,3 +271,133 @@ def test_negations_are_forced_by_default():
     from grug.verify import NEGATION_FORCE_TOKENS
 
     assert set(DEFAULT_FORCE_TOKENS) >= set(NEGATION_FORCE_TOKENS)
+
+
+def test_one_iteration_window_covers_the_whole_chunk(fake_llmlingua):
+    """Two reasons, both verified against the real library at distilgpt2:
+
+    llmlingua leaves the trailing ``iterative_size`` window uncompressed, so a
+    chunk shorter than it comes back untouched; and the multi-window path
+    reuses a KV cache in the tuple layout transformers dropped in 5.0.
+    """
+    LongLinguaBackend(device="cpu").compress("some text", rate=0.5)
+    assert fake_llmlingua["call"]["iterative_size"] == 42
+
+
+def test_the_window_is_measured_without_special_tokens(fake_llmlingua):
+    """A window one token larger than the context disables compression entirely,
+    and that is exactly what a stray BOS would buy."""
+    LongLinguaBackend(device="cpu").compress("some text", rate=0.5)
+    assert fake_llmlingua["add_special_tokens"] is False
+
+
+def test_iterative_size_can_be_overridden(fake_llmlingua):
+    LongLinguaBackend(device="cpu").compress("some text", rate=0.5, iterative_size=64)
+    assert fake_llmlingua["call"]["iterative_size"] == 64
+
+
+def test_a_legacy_cache_crash_is_reported_as_a_version_problem(fake_llmlingua):
+    """Upstream raises a bare unpacking error; that is not actionable on its own."""
+    fake_llmlingua["raises"] = ValueError("too many values to unpack (expected 2)")
+    with pytest.raises(RuntimeError, match="transformers"):
+        LongLinguaBackend(device="cpu").compress("some text", rate=0.5)
+
+
+def test_unrelated_value_errors_are_not_swallowed(fake_llmlingua):
+    fake_llmlingua["raises"] = ValueError("rate must be positive")
+    with pytest.raises(ValueError, match="rate must be positive"):
+        LongLinguaBackend(device="cpu").compress("some text", rate=0.5)
+
+
+def test_a_mid_word_fragment_never_reaches_the_output(fake_llmlingua):
+    """Raw-token filtering on a BPE model keeps "acy" out of "legacy"."""
+    fake_llmlingua["output"] = "accounts the acy plan"
+    result = LongLinguaBackend(device="cpu").compress("accounts on the legacy plan", rate=0.5)
+    assert result.text == "accounts the plan"
+    assert result.metadata["fragments_dropped"] == ["acy"]
+
+
+def test_a_mangled_placeholder_is_replaced_by_the_intact_one(fake_llmlingua):
+    """A half-eaten placeholder is unrecoverable rubble; the whole one is not."""
+    fake_llmlingua["output"] = "see GRUGSPigrating details"
+    result = LongLinguaBackend(device="cpu").compress("see GRUGSPANc0X for details", rate=0.5)
+    assert result.text == "see GRUGSPANc0X details"
+
+
+# -- against a real causal LM ----------------------------------------------
+
+#: A genuinely trained model, small enough to be worth downloading in CI. The
+#: backend's default (phi-2) picks better tokens but is ~5GB; these tests are
+#: about the integration -- kwargs the library accepts, output that survives
+#: snapping and pinning -- not about selection quality.
+SMOKE_MODEL = "distilgpt2"
+
+PROSE = (
+    "It is important to note that the billing pipeline has been rewritten to run on "
+    "the streaming ingest service. The migration is not automatic: accounts on the "
+    "legacy monthly plan must be moved by hand before the cutover date. In practice "
+    "we measured a median lag of 1.2 seconds across 4,800 accounts for Acme "
+    "Corporation, and a p99 lag of 9.6 seconds. Bills scale with volume, not price."
+)
+
+
+@pytest.fixture(scope="module")
+def real_backend():
+    pytest.importorskip("llmlingua")
+    return LongLinguaBackend(model_name=SMOKE_MODEL, device="cpu")
+
+
+@pytest.mark.slow
+def test_it_actually_compresses(real_backend):
+    result = real_backend.compress(PROSE, rate=0.5, question=QUESTION)
+    assert result.compressed_tokens < result.original_tokens
+
+
+@pytest.mark.slow
+def test_the_output_is_a_word_level_subsequence_of_the_input(real_backend):
+    """The property snapping exists to guarantee, checked against real output."""
+    result = real_backend.compress(PROSE, rate=0.5, question=QUESTION)
+    remaining = PROSE.split()
+    for word in result.text.split():
+        while remaining and remaining[0].strip(".,:;") != word.strip(".,:;"):
+            remaining.pop(0)
+        assert remaining, f"{word!r} is not a word of the original"
+        remaining.pop(0)
+
+
+@pytest.mark.slow
+def test_negations_survive_an_aggressive_rate(real_backend):
+    result = real_backend.compress(PROSE, rate=0.3, question=QUESTION)
+    assert result.text.lower().count("not") >= 2
+
+
+@pytest.mark.slow
+def test_numbers_survive_an_aggressive_rate(real_backend):
+    result = real_backend.compress(PROSE, rate=0.3, question=QUESTION)
+    for number in ("1.2", "4,800", "9.6"):
+        assert number in result.text
+
+
+@pytest.mark.slow
+def test_a_placeholder_survives_the_real_tokenizer(real_backend):
+    """BPE shreds the placeholder; snapping plus pinning must still return it whole."""
+    text = PROSE + " See GRUGSPANc0X for the full table."
+    result = real_backend.compress(text, rate=0.4, question=QUESTION)
+    assert "GRUGSPANc0X" in result.text
+
+
+@pytest.mark.slow
+def test_a_short_chunk_is_compressed_rather_than_passed_through(real_backend):
+    """With the library's default window a chunk this size comes back untouched."""
+    short = "The migration is not automatic and the cutover date has not moved yet."
+    result = real_backend.compress(short, rate=0.5)
+    assert result.compressed_tokens < result.original_tokens
+
+
+@pytest.mark.slow
+def test_a_full_document_round_trips_without_warnings(real_backend, sample_markdown):
+    import grug
+
+    result = grug.Compressor(real_backend).compress(sample_markdown, rate=0.5, question=QUESTION)
+    assert result.compressed_tokens < result.original_tokens
+    assert losses(result.warnings) == []

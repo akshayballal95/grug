@@ -69,7 +69,7 @@ def test_thousands_separator_is_normalised():
 def test_percentages_floats_and_versions_are_tracked():
     found = find_numbers("a 12.5% gain in v2 after 3-5 runs of 1.2.3")
     assert "12.5%" in found
-    assert "2" in found
+    assert "v2" in found
     assert "1.2.3" in found
 
 
@@ -163,3 +163,146 @@ def test_dotted_names_hold_together():
 
 def test_single_entity_after_an_article_is_kept():
     assert "U.S.A" in find_entities("The U.S.A office opened.")
+
+
+# -- negation scope ---------------------------------------------------------
+
+
+def test_negation_kept_without_its_scope_is_flagged():
+    """'not' surviving alone re-attaches to whatever word follows it."""
+    original = "The migration is not automatic; accounts must be moved by hand."
+    compressed = "migration not accounts moved hand."
+    warnings = verify(original, compressed)
+    assert any("scope" in w for w in warnings)
+    assert "'automatic'" in warnings[0]
+
+
+def test_negation_with_its_scope_intact_is_not_flagged():
+    original = "The migration is not automatic; accounts must be moved by hand."
+    compressed = "migration not automatic; accounts moved hand."
+    assert verify(original, compressed) == []
+
+
+def test_determiner_is_not_treated_as_the_scope():
+    """ "not a network partition" scopes over 'network', not over 'a'."""
+    original = "It was not a network partition, despite the initial page."
+    compressed = "not network partition, despite initial page."
+    assert verify(original, compressed) == []
+
+
+def test_scope_check_stays_quiet_when_the_negation_itself_was_dropped():
+    """One negation, one warning: losing 'not' is already reported as inversion."""
+    original = "Bills scale with volume, not price."
+    compressed = "bills scale volume"
+    warnings = verify(original, compressed)
+    assert len(warnings) == 1
+    assert warnings[0].startswith("negation lost")
+
+
+@pytest.mark.parametrize(
+    ("original", "compressed"),
+    [
+        # Prepositions and subordinators are not what a negation applies to.
+        (
+            "Backends load when you instantiate one, not when you import the package.",
+            "Backends load instantiate one, not import package.",
+        ),
+        (
+            "Import heavy dependencies inside your methods, not at module scope.",
+            "Import heavy dependencies inside methods, not module scope.",
+        ),
+        (
+            "A protected span comes back verbatim or not at all — never rewritten.",
+            "protected span comes back verbatim not at all — never rewritten.",
+        ),
+    ],
+)
+def test_function_words_are_not_treated_as_negation_scope(original, compressed):
+    """Regression: these three shapes all appear in the project README."""
+    assert verify(original, compressed) == []
+
+
+# -- entity ambiguity -------------------------------------------------------
+
+
+def test_entities_collapsing_onto_the_same_word_are_flagged():
+    """Two names reduced to a shared head noun no longer tell each other apart."""
+    original = "Bank of America acquired Bank of England in 1999."
+    compressed = "Bank acquired Bank 1999."
+    warnings = verify(original, compressed)
+    assert any("indistinguishable" in w for w in warnings)
+    assert "Bank of America" in warnings[0] and "Bank of England" in warnings[0]
+
+
+def test_one_entity_clipped_to_its_distinguishing_word_is_still_fine():
+    """Guards test_partially_kept_entity_is_not_flagged: nothing to confuse it with."""
+    assert verify("Acme Corporation reported a gain.", "Acme reported gain") == []
+
+
+def test_two_entities_that_stay_distinct_are_not_flagged():
+    original = "Acme Corporation and Globex Corporation both filed."
+    compressed = "Acme and Globex filed."
+    assert verify(original, compressed) == []
+
+
+def test_a_repeated_entity_does_not_collide_with_itself():
+    original = "Acme Corporation grew. Acme Corporation hired."
+    compressed = "Acme grew. Acme hired."
+    assert verify(original, compressed) == []
+
+
+@pytest.mark.parametrize(
+    ("original", "compressed"),
+    [
+        ("The ledger is never more than 3 seconds behind.", "ledger never 3 seconds behind."),
+        ("Retries are not always safe to enable.", "Retries not safe enable."),
+        ("This is not only slow but wrong.", "not slow but wrong."),
+    ],
+)
+def test_degree_words_are_not_treated_as_negation_scope(original, compressed):
+    """ "never more than 3 seconds" scopes over the claim, not over "more"."""
+    assert verify(original, compressed) == []
+
+
+def test_a_version_literal_is_not_the_same_number_as_a_bare_count():
+    """'v2' and '2' are different facts; normalising the v away merged them."""
+    assert find_numbers("v2 shipped after 2 attempts") == {"v2": 1, "2": 1}
+
+
+def test_losing_the_v_from_a_version_is_flagged():
+    warnings = verify("Roll back to v2 before the deadline.", "Roll back 2 deadline.")
+    assert any("numbers missing" in w for w in warnings)
+    assert "'v2'" in warnings[0]
+
+
+def test_version_case_is_still_normalised():
+    assert find_numbers("V2 and v2") == {"v2": 2}
+
+
+def test_a_negation_does_not_scope_across_a_sentence_boundary():
+    """"No." is a complete answer; the next sentence's subject is not its scope."""
+    original = "Is it ready? No. The migration proceeds tonight."
+    compressed = "ready? No. proceeds tonight."
+    assert verify(original, compressed) == []
+
+
+def test_a_negation_does_not_scope_across_a_line_break():
+    assert verify("Ship it? No\nThe rollout is paused.", "Ship it? No\nrollout paused.") == []
+
+
+def test_an_abbreviated_second_mention_is_not_a_collision():
+    """'Acme Corp' is 'Acme Corporation' abbreviated, not a second company."""
+    original = "Acme Corporation grew. Acme Corp hired more people."
+    compressed = "Acme grew. Acme hired people."
+    assert verify(original, compressed) == []
+
+
+def test_a_bare_second_mention_is_not_a_collision():
+    original = "Acme Corporation grew. Acme hired more people."
+    compressed = "Acme grew. Acme hired people."
+    assert verify(original, compressed) == []
+
+
+def test_genuinely_different_names_still_collide():
+    warnings = verify("Bank of America met Bank of England.", "Bank met Bank.")
+    assert any("indistinguishable" in w for w in warnings)

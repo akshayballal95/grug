@@ -21,6 +21,7 @@ __all__ = [
     "COMPOUND_NUMBER_RE",
     "DEFAULT_CHUNK_TOKENS",
     "FENCE_RE",
+    "IDENTIFIER_RE",
     "INLINE_CODE_RE",
     "LINE_PREFIX_RE",
     "URL_RE",
@@ -68,6 +69,32 @@ LINE_PREFIX_RE = re.compile(
 #: Numbers whose meaning lives in an internal separator: 9.6, 1,250, 3-5.
 #: Backends keep the digits but drop the punctuation, splitting one into two.
 COMPOUND_NUMBER_RE = re.compile(r"(?<![\w.])\d+(?:[.,:/-]\d+)+%?(?![\w])")
+
+#: Names whose meaning lives in an internal separator, the way a number's does:
+#: us-east-1, v2.1.0-rc3, text/plain, read:write, utf-8. A word-piece tokenizer
+#: splits these on the punctuation and a compressor then drops it, so "node-07"
+#: comes back as "node 07" -- a different host, silently.
+#:
+#: The token must mix letters and digits. Punctuation alone does not make an
+#: identifier -- "and/or", "input/output", "e.g." and "U.S.A" are English, and
+#: pinning them would cost ratio on every document for no faithfulness gain.
+#: Neither does a bare hyphen: "api-gateway" and "sign-off" are the same shape,
+#: so no pattern separates them, and the pair that matters ("node-07") has a
+#: digit. A bare number is :data:`COMPOUND_NUMBER_RE`'s job, not this one's.
+#: Letters and digits together: "node-07", "v2.1.0-rc3", "utf-8", "log4j-2.17.1".
+_IDENT_MIXED = (
+    r"(?=[A-Za-z0-9./:-]*[A-Za-z])"
+    r"(?=[A-Za-z0-9./:-]*\d)"
+    r"[A-Za-z0-9]+(?:[./:-][A-Za-z0-9]+)+%?"
+)
+#: Dotted names with no digit at all: "TRAINING.md", "notes.grug.md", "Node.js".
+#: Every segment must be at least two characters, which is what separates a
+#: filename from the dotted abbreviations that pepper English -- "e.g.", "i.e.",
+#: "U.S.A" are all single-letter segments. A letter is required so that "12.50"
+#: stays a number.
+_IDENT_DOTTED = r"(?=[A-Za-z0-9.]*[A-Za-z])[A-Za-z0-9]{2,}(?:\.[A-Za-z0-9]{2,})+"
+
+IDENTIFIER_RE = re.compile(rf"(?<![\w./:-])(?:{_IDENT_MIXED}|{_IDENT_DOTTED})(?![\w-])")
 
 # Placeholder for a protected span. A plain ASCII word, because a word-piece
 # tokenizer mangles private-use codepoints and splits on punctuation. One-letter
@@ -153,7 +180,15 @@ def protect_spans(text: str, *patterns: re.Pattern[str], tag: str = "c") -> tupl
     stash: list[str] = []
 
     def _stash(match: re.Match[str]) -> str:
-        stash.append(match.group(0))
+        span = match.group(0)
+        # A later pattern can span an earlier placeholder -- "`-b`/`backend=`"
+        # becomes "GRUGSPANc4X/GRUGSPANc5X", which reads as one identifier.
+        # Stashing it would nest the two, and :func:`restore_spans` unwraps only
+        # one level, so both spans would be lost. Leave it to the pattern that
+        # already claimed it.
+        if contains_placeholder(span):
+            return span
+        stash.append(span)
         return f"{_PH_PREFIX}{tag}{len(stash) - 1}{_PH_SUFFIX}"
 
     for pattern in patterns:
@@ -250,6 +285,7 @@ def chunk_document(
     preserve_inline_code: bool = True,
     preserve_markdown: bool = True,
     preserve_numbers: bool = True,
+    preserve_identifiers: bool = True,
 ) -> list[Chunk]:
     """Cut ``text`` into chunks of at most ``max_tokens``, structure recorded.
 
@@ -265,6 +301,8 @@ def chunk_document(
             numbers, blockquote markers, horizontal rules).
         preserve_numbers: Protect numbers with internal separators, which a
             backend keeps the digits of but not the punctuation between them.
+        preserve_identifiers: Protect names whose internal separator is
+            load-bearing (``us-east-1``, ``text/plain``, ``v2.1.0-rc3``).
     """
     if max_tokens < 1:
         raise ValueError(f"max_tokens must be >= 1, got {max_tokens}")
@@ -280,6 +318,11 @@ def chunk_document(
     spans = [INLINE_CODE_RE, URL_RE] if preserve_inline_code else []
     if preserve_markdown:
         spans.insert(0, LINE_PREFIX_RE)
+    # Identifiers first: they are the longer, more specific match. Run the other
+    # way round, COMPOUND_NUMBER_RE claims the "2.17.1" out of "log4j-2.17.1"
+    # and leaves the name behind it unprotected.
+    if preserve_identifiers:
+        spans.append(IDENTIFIER_RE)
     if preserve_numbers:
         spans.append(COMPOUND_NUMBER_RE)
 
@@ -498,6 +541,7 @@ def compress_document(
     preserve_inline_code: bool = True,
     preserve_markdown: bool = True,
     preserve_numbers: bool = True,
+    preserve_identifiers: bool = True,
     **kwargs: Any,
 ) -> CompressionResult:
     """Chunk ``text``, compress each chunk with ``backend``, and reassemble.
@@ -513,6 +557,7 @@ def compress_document(
         preserve_inline_code=preserve_inline_code,
         preserve_markdown=preserve_markdown,
         preserve_numbers=preserve_numbers,
+        preserve_identifiers=preserve_identifiers,
     )
     if not chunks:
         return CompressionResult.build(text, text, backend.name, metadata={"chunks": 0})
@@ -554,12 +599,23 @@ def compress_document(
 
 
 def _merge_metadata(items: Iterable[dict[str, Any]]) -> dict[str, Any]:
-    """Fold per-chunk metadata: ints sum as counters, anything else keeps the first."""
+    """Fold per-chunk metadata across the chunks of one document.
+
+    Ints sum as counters and lists concatenate in document order -- a list is a
+    record of what happened to each chunk ("pinned_back"), so keeping only the
+    first chunk's would report one restored word for a document where twenty
+    were put back. Anything else keeps the first value seen, because a scalar
+    like the model name or device is the same for every chunk.
+    """
     merged: dict[str, Any] = {}
     for item in items:
         for key, value in item.items():
-            if isinstance(value, int) and not isinstance(value, bool):
+            if isinstance(value, bool):
+                merged.setdefault(key, value)
+            elif isinstance(value, int):
                 merged[key] = merged.get(key, 0) + value
+            elif isinstance(value, list):
+                merged.setdefault(key, []).extend(value)
             else:
                 merged.setdefault(key, value)
     return merged

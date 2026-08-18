@@ -137,6 +137,13 @@ class CompressorBackend(ABC):
     #: ``True`` when the backend rewrites text rather than selecting from it.
     generative: bool = False
 
+    #: Constructor arguments that cannot be varied per call, because they decide
+    #: how the model is loaded. Passing one to :func:`grug.compress` as a
+    #: per-call keyword would forward it to :meth:`compress`, where a backend is
+    #: free to ignore it -- so they are rejected there and routed through
+    #: ``backend_kwargs`` instead. Extend this in a subclass that adds more.
+    construction_only: tuple[str, ...] = ("device", "model_name")
+
     #: ``True`` when ``compress`` conditions on a ``question`` kwarg. Routing
     #: keys on this, so it stays ``False`` unless a backend really uses it.
     question_aware: bool = False

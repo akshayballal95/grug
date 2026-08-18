@@ -6,6 +6,11 @@
 
 Backends whose dependencies are missing are listed as unavailable and skipped,
 so this runs on a bare `pip install grug` and gets richer as you add extras.
+
+Question-aware backends sit out by default: there is no question in this
+comparison for them to condition on, which is the only thing they do better,
+and they are the slowest and largest to download. Pass --with-question to give
+them one and include them.
 """
 
 from __future__ import annotations
@@ -22,6 +27,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--rates", type=float, nargs="+", default=[0.8, 0.5, 0.3])
     parser.add_argument("--device", default="auto", help="device for backends that use one")
+    parser.add_argument(
+        "--with-question",
+        metavar="TEXT",
+        help="condition question-aware backends on TEXT and include them in the table",
+    )
     return parser.parse_args()
 
 
@@ -54,6 +64,9 @@ def main() -> int:
     print("  " + "-" * (len(header) - 2))
 
     for name in grug.list_backends():
+        if grug.get_backend_class(name).question_aware and not args.with_question:
+            print(f"  {name:<10} {'-':>5} {'-':>8} {'-':>7} {'-':>7}  skipped, pass --with-question")
+            continue
         comp = build(name, args.device)
         if comp is None:
             print(f"  {name:<10} {'-':>5} {'-':>8} {'-':>7} {'-':>7}  dependencies not installed")
@@ -61,7 +74,7 @@ def main() -> int:
         comp.compress("warm up", rate=0.5)  # keep model-load time out of the timings
         for rate in args.rates:
             started = time.perf_counter()
-            result = comp.compress(doc, rate=rate)
+            result = comp.compress(doc, rate=rate, question=args.with_question)
             elapsed = time.perf_counter() - started
             note = "clean" if not result.warnings else f"{len(result.warnings)} WARN"
             print(

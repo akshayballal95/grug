@@ -7,7 +7,7 @@ original and splices back any protected word that was dropped.
 
 from __future__ import annotations
 
-from grug.pinning import restore_forced
+from grug.pinning import restore_forced, snap_to_words
 
 
 def test_dropped_negation_is_reinserted_in_place():
@@ -92,3 +92,58 @@ def test_everything_dropped_restores_in_original_order():
     text, restored = restore_forced("not this and never that", "", ["not", "never"])
     assert text == "not never"
     assert restored == ["not", "never"]
+
+
+# -- snapping a token-level output back onto whole words --------------------
+
+
+def test_a_mid_word_fragment_is_dropped():
+    """LLMLingua-1 filters raw BPE tokens, so it can keep half a word."""
+    text, dropped = snap_to_words("accounts on the legacy plan", "accounts the acy plan")
+    assert text == "accounts the plan"
+    assert dropped == ["acy"]
+
+
+def test_whole_words_are_kept_in_order():
+    text, dropped = snap_to_words("the quick brown fox jumps", "quick fox jumps")
+    assert text == "quick fox jumps"
+    assert dropped == []
+
+
+def test_a_mangled_placeholder_is_dropped_not_left_as_garbage():
+    text, _ = snap_to_words("see GRUGSPANc0X for details", "see GRUGSPigrating details")
+    assert text == "see details"
+
+
+def test_a_repeated_word_is_not_treated_as_a_fragment():
+    text, dropped = snap_to_words("pay the fee and pay the tax", "pay fee pay tax")
+    assert text == "pay fee pay tax"
+    assert dropped == []
+
+
+def test_line_structure_survives_a_dropped_fragment():
+    text, _ = snap_to_words("first line here\nsecond line there", "first acy\nsecond there")
+    assert text == "first\nsecond there"
+
+
+def test_a_paragraph_break_is_not_downgraded_by_a_dropped_fragment():
+    text, _ = snap_to_words("alpha beta\n\ngamma delta", "alpha acy\n\ngamma delta")
+    assert text == "alpha\n\ngamma delta"
+
+
+def test_punctuation_attached_to_a_real_word_is_kept():
+    text, dropped = snap_to_words("bills scale with volume, not price.", "bills volume, price.")
+    assert text == "bills volume, price."
+    assert dropped == []
+
+
+def test_snapping_an_empty_output_is_empty():
+    assert snap_to_words("some original text", "") == ("", [])
+
+
+def test_snap_then_restore_recovers_a_placeholder_intact():
+    """The two halves of the guarantee: drop the wreckage, put the real one back."""
+    snapped, _ = snap_to_words("see GRUGSPANc0X for details", "see GRUGSPigrating details")
+    text, restored = restore_forced("see GRUGSPANc0X for details", snapped, ["GRUGSPANc0X"])
+    assert text == "see GRUGSPANc0X details"
+    assert restored == ["GRUGSPANc0X"]

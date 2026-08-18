@@ -7,10 +7,12 @@ import pytest
 from grug.base import CompressionResult, CompressorBackend, count_tokens
 from grug.chunking import (
     DEFAULT_CHUNK_TOKENS,
+    IDENTIFIER_RE,
     INLINE_CODE_RE,
     URL_RE,
     chunk_document,
     compress_document,
+    contains_placeholder,
     protect_spans,
     rejoin,
     restore_spans,
@@ -351,3 +353,77 @@ def test_compound_numbers_are_protected(number):
 def test_number_protection_can_be_switched_off():
     chunks = chunk_document("Value was 9.6 here.", preserve_numbers=False)
     assert not any("9.6" in span for c in chunks for span in c.stash)
+
+
+@pytest.mark.parametrize(
+    "identifier",
+    [
+        "node-07", "us-east-1", "v2.1.0-rc3", "RFC-7231", "utf-8", "sha256:9f2b",
+        "log4j-2.17.1", "TRAINING.md", "notes.grug.md", "Node.js",
+    ],
+)
+def test_identifiers_are_protected(identifier):
+    """Internal punctuation is load-bearing: a backend that drops it renames the thing."""
+    result = compress_document(f"The {identifier} target failed during the rollout.", _Upper())
+    assert identifier in result.text
+
+
+def test_identifier_protection_can_be_switched_off():
+    chunks = chunk_document("Deploy to us-east-1 now.", preserve_identifiers=False)
+    assert not any("us-east-1" in span for c in chunks for span in c.stash)
+
+
+@pytest.mark.parametrize(
+    "word", ["sign-off", "api-gateway", "well-known", "trade-off", "text/plain", "read:write"]
+)
+def test_plain_hyphenated_words_are_left_compressible(word):
+    """A hyphen between two plain words is ordinary English, not an identifier.
+
+    'sign-off' and 'api-gateway' are the same shape, so no rule can protect one
+    and release the other. Protecting both would pin every hyphenated compound
+    in the document; the rule asks for a digit or a non-hyphen separator instead.
+    """
+    chunks = chunk_document(f"Await {word} from the team.", preserve_identifiers=True)
+    assert not any(word in span for c in chunks for span in c.stash)
+
+
+def test_a_later_pattern_does_not_swallow_an_earlier_placeholder():
+    """Nesting one placeholder inside another loses it: restore only unwraps once."""
+    text, stash = protect_spans("see `-b`/`backend=` now", INLINE_CODE_RE, IDENTIFIER_RE)
+    assert not any(contains_placeholder(span) for span in stash)
+    assert restore_spans(text, stash) == "see `-b`/`backend=` now"
+
+
+def test_no_placeholder_leaks_through_a_document_round_trip():
+    text = "> 9.6 seconds\n\nUse `-b`/`backend=` on us-east-1.\n"
+    result = compress_document(text, _Upper())
+    assert not contains_placeholder(result.text), result.text
+
+
+def test_per_chunk_lists_are_concatenated_not_overwritten():
+    """'pinned_back' is how a user audits what a backend had to restore."""
+    from grug.chunking import _merge_metadata
+
+    merged = _merge_metadata(
+        [
+            {"pinned_back": ["not"], "origin_tokens": 10},
+            {"pinned_back": ["never", "4,800"], "origin_tokens": 12},
+            {"pinned_back": [], "origin_tokens": 8},
+        ]
+    )
+    assert merged["pinned_back"] == ["not", "never", "4,800"]
+    assert merged["origin_tokens"] == 30
+
+
+def test_scalar_metadata_still_keeps_the_first_value():
+    from grug.chunking import _merge_metadata
+
+    merged = _merge_metadata([{"model": "a", "device": "cpu"}, {"model": "b", "device": "cuda"}])
+    assert merged == {"model": "a", "device": "cpu"}
+
+
+@pytest.mark.parametrize("phrase", ["and/or", "input/output", "he/she", "N/A", "e.g.", "U.S.A"])
+def test_ordinary_english_punctuation_is_not_an_identifier(phrase):
+    """A slash or dot between plain words is English; pinning it costs ratio."""
+    chunks = chunk_document(f"Use {phrase} in the report.", preserve_identifiers=True)
+    assert not any(phrase.strip(".") in span for c in chunks for span in c.stash)

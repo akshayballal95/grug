@@ -12,6 +12,7 @@ import pathlib
 import pytest
 
 import grug
+from conftest import losses
 from grug.backends.lingua2 import Lingua2Backend
 from grug.chunking import chunk_document
 
@@ -166,4 +167,4 @@ def test_readme_structure_survives_the_classifier(readme):
         pytest.skip("llmlingua not installed")
     result = grug.compress(readme, rate=0.5, backend="lingua2")
     assert _structure(result.text) == _structure(readme)
-    assert result.warnings == [], result.warnings
+    assert losses(result.warnings) == [], result.warnings

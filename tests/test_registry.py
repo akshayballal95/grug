@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import pytest
 
 from grug import registry
@@ -37,12 +39,13 @@ def test_builtin_backends_are_registered():
     names = list_backends()
     assert "rules" in names
     assert "lingua2" in names
+    assert "longlingua" in names
 
 
 def test_preferred_backends_are_listed_first():
+    """Built-ins in preference order, third-party registrations after them."""
     names = list_backends()
-    assert names[0] == "lingua2"
-    assert names[1] == "rules"
+    assert names[:3] == ["lingua2", "longlingua", "rules"]
 
 
 def test_register_and_create(dummy):
@@ -164,3 +167,84 @@ def test_importing_grug_does_not_import_torch():
     )
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
     assert out.stdout.strip() == "[]"
+
+
+# -- constructor kwargs through the one-shot helper -------------------------
+
+
+def _probe_backend():
+    """A backend that records what reached its constructor and its compress()."""
+    from grug.base import CompressionResult, CompressorBackend
+
+    class _Probe(CompressorBackend):
+        name = "kwargs-probe"
+        instances: ClassVar[list] = []
+
+        def __init__(self, **kwargs):
+            self.ctor_kwargs = kwargs
+            self.calls: list[dict] = []
+            type(self).instances.append(self)
+
+        def compress(self, text, rate=0.5, **kwargs):
+            self.calls.append(kwargs)
+            return CompressionResult.build(text, text, self.name)
+
+    return _Probe
+
+
+def test_construction_kwargs_reach_the_constructor_through_compress():
+    import grug
+    from grug.registry import register_backend, unregister_backend
+
+    probe = register_backend(_probe_backend())
+    try:
+        grug.compress("some text here", backend="kwargs-probe", backend_kwargs={"device": "cuda"})
+        assert probe.instances[-1].ctor_kwargs == {"device": "cuda"}
+        assert probe.instances[-1].calls == [{}]
+    finally:
+        unregister_backend("kwargs-probe")
+        grug._BACKEND_CACHE.clear()
+
+
+def test_a_construction_only_kwarg_passed_per_call_is_rejected():
+    """Silently forwarding 'device' to compress() ran on the wrong device."""
+    import grug
+    from grug.registry import register_backend, unregister_backend
+
+    register_backend(_probe_backend())
+    try:
+        with pytest.raises(TypeError, match="backend_kwargs"):
+            grug.compress("some text here", backend="kwargs-probe", device="cuda")
+    finally:
+        unregister_backend("kwargs-probe")
+        grug._BACKEND_CACHE.clear()
+
+
+def test_differing_construction_kwargs_do_not_share_a_cached_backend():
+    import grug
+    from grug.registry import register_backend, unregister_backend
+
+    probe = register_backend(_probe_backend())
+    try:
+        grug.compress("text one here", backend="kwargs-probe", backend_kwargs={"device": "cpu"})
+        grug.compress("text two here", backend="kwargs-probe", backend_kwargs={"device": "cuda"})
+        assert [i.ctor_kwargs["device"] for i in probe.instances] == ["cpu", "cuda"]
+    finally:
+        unregister_backend("kwargs-probe")
+        grug._BACKEND_CACHE.clear()
+
+
+def test_list_valued_construction_kwargs_are_accepted():
+    """force_tokens is a documented list-typed constructor argument."""
+    import grug
+    from grug.registry import register_backend, unregister_backend
+
+    probe = register_backend(_probe_backend())
+    try:
+        grug.compress(
+            "some text here", backend="kwargs-probe", backend_kwargs={"force_tokens": ["no", "not"]}
+        )
+        assert probe.instances[-1].ctor_kwargs == {"force_tokens": ["no", "not"]}
+    finally:
+        unregister_backend("kwargs-probe")
+        grug._BACKEND_CACHE.clear()

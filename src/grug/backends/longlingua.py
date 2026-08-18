@@ -11,6 +11,11 @@ but only ``compress_prompt_llmlingua2`` reads it, so passing it would read as a
 guarantee this path does not honour. Negations, entities, placeholders and
 numbers are pinned afterwards instead, by :func:`grug.pinning.restore_forced`.
 
+This path also filters raw tokens rather than whole words, so a BPE model will
+happily keep "acy" out of "legacy". :func:`grug.pinning.snap_to_words` drops
+those fragments first, which is what keeps the output a subsequence of the
+input and keeps protected-span placeholders intact rather than mangled.
+
 torch, transformers and llmlingua are imported inside :meth:`_load`, never at
 module import time.
 """
@@ -21,7 +26,7 @@ from typing import Any
 
 from ..base import CompressionResult, CompressorBackend, MissingDependencyError
 from ..detok import repair_detokenization
-from ..pinning import collect_force_tokens, restore_forced
+from ..pinning import collect_force_tokens, restore_forced, snap_to_words
 from ..registry import register_backend
 from ..verify import NEGATION_FORCE_TOKENS
 from ._llmlingua import filter_supported, missing_modules, resolve_device
@@ -140,14 +145,16 @@ class LongLinguaBackend(CompressorBackend):
         )
 
         model = self._load()
-        call_kwargs = self._build_call_kwargs(model, rate, question, kwargs)
-        raw = model.compress_prompt(text, **call_kwargs)
+        call_kwargs = self._build_call_kwargs(model, rate, text, question, kwargs)
+        raw = self._call(model, text, call_kwargs)
         compressed = raw["compressed_prompt"] if isinstance(raw, dict) else str(raw)
 
-        # Repair before pinning, not after: the alignment compares words, and
-        # "3 - 5" does not match the "3-5" it came from.
+        # Order matters. Repair first: the alignment compares words, and "3 - 5"
+        # does not match the "3-5" it came from. Then snap, so the pinning step
+        # sees no fragments. Then restore what the snap and the model dropped.
         if repair:
             compressed = repair_detokenization(compressed)
+        compressed, fragments = snap_to_words(text, compressed)
         compressed, pinned_back = restore_forced(text, compressed, forced)
 
         metadata: dict[str, Any] = {
@@ -156,6 +163,7 @@ class LongLinguaBackend(CompressorBackend):
             "requested_rate": rate,
             "conditioned": bool(question),
             "pinned_back": pinned_back,
+            "fragments_dropped": fragments,
         }
         if isinstance(raw, dict):
             for key in ("origin_tokens", "compressed_tokens", "ratio", "rate"):
@@ -164,8 +172,30 @@ class LongLinguaBackend(CompressorBackend):
 
         return CompressionResult.build(text, compressed, self.name, metadata=metadata)
 
+    @staticmethod
+    def _call(model: Any, text: str, call_kwargs: dict[str, Any]) -> Any:
+        """Run the compressor, translating one upstream crash into a real diagnosis.
+
+        llmlingua 0.2.x slices the KV cache as ``for k, v in past_key_values``,
+        the tuple layout transformers dropped in 5.0. The bare unpacking error
+        that produces says nothing about which two packages disagree.
+        """
+        try:
+            return model.compress_prompt(text, **call_kwargs)
+        except ValueError as exc:
+            if "too many values to unpack" not in str(exc):
+                raise
+            raise RuntimeError(
+                "llmlingua's multi-window path reads past_key_values as (key, value) "
+                "tuples, a layout transformers removed in 5.0. grug normally avoids "
+                "it by compressing each chunk in a single window, so reaching this "
+                "means iterative_size was overridden below the chunk length. Drop "
+                "the override, install transformers<5, or use the lingua2 backend, "
+                "whose encoder keeps no cache and is unaffected."
+            ) from exc
+
     def _build_call_kwargs(
-        self, model: Any, rate: float, question: str, overrides: dict[str, Any]
+        self, model: Any, rate: float, text: str, question: str, overrides: dict[str, Any]
     ) -> dict[str, Any]:
         """Assemble ``compress_prompt`` kwargs, dropping any this version lacks."""
         call_kwargs: dict[str, Any] = {
@@ -177,6 +207,9 @@ class LongLinguaBackend(CompressorBackend):
             # between -- and a context-level filter could drop the only chunk.
             "use_context_level_filter": False,
         }
+        window = self._window(model, text)
+        if window is not None:
+            call_kwargs["iterative_size"] = window
         if question:
             call_kwargs.update(
                 question=question,
@@ -192,3 +225,23 @@ class LongLinguaBackend(CompressorBackend):
             call_kwargs["rank_method"] = "llmlingua"
         call_kwargs.update(overrides)
         return filter_supported(model.compress_prompt, call_kwargs)
+
+    @staticmethod
+    def _window(model: Any, text: str) -> int | None:
+        """One iteration window spanning the whole chunk, or ``None`` if unmeasurable.
+
+        llmlingua compresses only what lies before the trailing ``iterative_size``
+        tokens, so with the library default of 200 a chunk shorter than that comes
+        back byte-for-byte and a 450-token chunk keeps its last 200 tokens intact.
+        Sizing the window to the chunk makes the whole chunk eligible -- and, as a
+        side effect, keeps the run to a single pass, which is the only path that
+        does not touch the legacy KV-cache layout. Measured without special
+        tokens: a window one token wider than the context compresses nothing.
+        """
+        measure = getattr(model, "get_token_length", None)
+        if measure is None:  # pragma: no cover - every released version has it
+            return None
+        try:
+            return max(1, int(measure(text, add_special_tokens=False)))
+        except (TypeError, ValueError):  # pragma: no cover - exotic tokenizer
+            return None

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import pytest
 
+from conftest import losses
 from grug.backends.lingua2 import (
     DEFAULT_FORCE_TOKENS,
     DEFAULT_MODEL,
@@ -418,12 +419,17 @@ def test_thousands_separator_is_rejoined(loaded_backend):
 @pytest.mark.slow
 @requires_model
 def test_real_document_is_faithful_at_moderate_rates(loaded_backend, sample_markdown):
-    """The verifier must stay quiet on a real document at a sane rate."""
+    """Nothing may go missing from a real document at a sane rate.
+
+    Scope warnings are permitted: at rate 0.5 this fixture strands two cues
+    ("Do not poll", "cannot be rolled back"), which is a known limit of pinning
+    a negation without its target rather than a regression in this backend.
+    """
     import grug
 
     result = grug.compress(sample_markdown, rate=0.5, backend=loaded_backend)
     assert result.ratio < 0.75
-    assert result.warnings == [], result.warnings
+    assert losses(result.warnings) == [], result.warnings
     assert "```python" in result.text
 
 
@@ -469,7 +475,9 @@ def test_sentence_initial_negation_survives(loaded_backend):
     ):
         for rate in (0.5, 0.3):
             result = grug.compress(text, rate=rate, backend=loaded_backend)
-            assert result.warnings == [], f"{text!r} at rate={rate}: {result.warnings}"
+            # The regression is about the cue surviving; whether its target also
+            # survived at rate 0.3 is the separate scope problem.
+            assert losses(result.warnings) == [], f"{text!r} at rate={rate}: {result.warnings}"
 
 
 def test_entities_are_pinned_by_default(fake_llmlingua):
@@ -512,3 +520,22 @@ def test_entity_pinning_removes_the_entity_warning_class(sample_markdown):
         assert not [w for w in with_.warnings if w.startswith("entities")], with_.warnings
         # The safety costs a little ratio, and must not cost a lot.
         assert with_.ratio - without.ratio < 0.08
+
+
+@requires_model
+@pytest.mark.slow
+def test_scope_warnings_track_compression_pressure(loaded_backend, sample_markdown):
+    """Quiet when the backend has room; louder as it is squeezed.
+
+    A faithfulness alarm that fires at every rate is noise. This one is silent at
+    0.7 and appears at 0.35 -- one step before the coarser "negation lost" check
+    notices anything, which is the point of having it.
+    """
+    import grug
+
+    def scope_warnings(rate: float) -> list[str]:
+        result = grug.compress(sample_markdown, rate=rate, backend=loaded_backend)
+        return [w for w in result.warnings if "without its scope" in w]
+
+    assert scope_warnings(0.7) == []
+    assert scope_warnings(0.35) != []

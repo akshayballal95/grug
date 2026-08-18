@@ -1,0 +1,253 @@
+#!/usr/bin/env python3
+"""Dispatch a grug training run to a RunPod GPU and push the result to the Hub.
+
+    export RUNPOD_API_KEY=...   HF_TOKEN=...
+    python scripts/runpod_train.py --repo <user>/grug-modernbert --dry-run
+    python scripts/runpod_train.py --repo <user>/grug-modernbert --go
+
+The pod clones this repository, installs ``grug[train]``, prepares the corpus,
+trains, pushes the checkpoint, and then terminates itself -- so a crashed run
+costs minutes, not the rest of the day. Nothing is created without ``--go``.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+import textwrap
+import time
+
+REPO_URL = "https://github.com/akshayballal95/grug.git"
+#: Any CUDA image with python and git. Override with --image if this tag ages out.
+DEFAULT_IMAGE = "runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04"
+#: ModernBERT-base at seq 512 needs well under this; more VRAM buys bigger batches.
+MIN_VRAM_GB = 16
+
+
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    p.add_argument(
+        "--repo", required=True, help="Hugging Face repo id to push to, e.g. you/grug-modernbert"
+    )
+    p.add_argument("--branch", default="feat/train", help="Git branch the pod should clone")
+    p.add_argument("--model", default="answerdotai/ModernBERT-base")
+    p.add_argument("--epochs", type=int, default=10)
+    p.add_argument("--batch-size", type=int, default=32)
+    p.add_argument("--lr", type=float, default=1e-5)
+    p.add_argument("--max-length", type=int, default=512)
+    p.add_argument("--cs-weight", type=float, default=0.0)
+    p.add_argument(
+        "--gpu", default=None, help="Exact GPU type id. Default: cheapest with enough VRAM."
+    )
+    p.add_argument("--max-price", type=float, default=0.60, help="Refuse GPUs above this $/hr.")
+    p.add_argument("--image", default=DEFAULT_IMAGE)
+    p.add_argument("--private", action="store_true", help="Create the Hub repo private.")
+    p.add_argument(
+        "--go", action="store_true", help="Actually create the pod. Without this, dry run."
+    )
+    p.add_argument("--poll", type=int, default=60, help="Seconds between status polls.")
+    return p.parse_args()
+
+
+def pick_gpu(runpod, args) -> dict:
+    """Cheapest community-cloud GPU with enough VRAM, unless one was named.
+
+    ``get_gpus()`` carries no pricing, so each candidate needs its own lookup.
+    """
+    candidates = [g for g in runpod.get_gpus() if (g.get("memoryInGb") or 0) >= MIN_VRAM_GB]
+    priced = []
+    for gpu in candidates:
+        try:
+            detail = runpod.get_gpu(gpu["id"])
+        except Exception:
+            continue
+        price = detail.get("communityPrice") or detail.get("securePrice")
+        if price and detail.get("communityCloud"):
+            priced.append(
+                {
+                    "id": gpu["id"],
+                    "name": detail.get("displayName"),
+                    "vram": detail.get("memoryInGb"),
+                    "price": price,
+                }
+            )
+    priced.sort(key=lambda g: (g["price"], -g["vram"]))
+
+    if args.gpu:
+        for gpu in priced:
+            if gpu["id"] == args.gpu:
+                return gpu
+        sys.exit(f"error: --gpu {args.gpu!r} not available with >={MIN_VRAM_GB}GB")
+    if not priced:
+        sys.exit("error: no community GPU with enough VRAM is currently available")
+    if priced[0]["price"] > args.max_price:
+        sys.exit(f"error: cheapest is ${priced[0]['price']}/hr, above --max-price {args.max_price}")
+
+    print(f"  cheapest with >={MIN_VRAM_GB}GB:")
+    for gpu in priced[:6]:
+        print(f"    {gpu['id']:<32} {gpu['vram']:>3}GB  ${gpu['price']:.3f}/hr")
+    return priced[0]
+
+
+_TERMINATE = """
+import json, os, urllib.request
+body = json.dumps({"query": 'mutation { podTerminate(input: {podId: "' + os.environ["RUNPOD_POD_ID"] + '"}) }'}).encode()
+req = urllib.request.Request(
+    "https://api.runpod.io/graphql?api_key=" + os.environ["RUNPOD_API_KEY"],
+    data=body, headers={"Content-Type": "application/json"})
+print(urllib.request.urlopen(req, timeout=30).read().decode()[:200])
+"""
+
+# Placeholders rather than an f-string: this text is full of shell ${} and JSON
+# braces, and escaping them all is how bugs get in.
+_BOOTSTRAP = """
+set -euxo pipefail
+export DEBIAN_FRONTEND=noninteractive
+export HF_HUB_ENABLE_HF_TRANSFER=0
+
+cat > /tmp/terminate.py <<'TERMINATE_EOF'
+@TERMINATE@
+TERMINATE_EOF
+
+# Any exit path terminates the pod. A crashed run must not bill all day.
+cleanup() {
+  code=$?
+  echo "GRUG_EXIT status=$code"
+  python /tmp/terminate.py || true
+}
+trap cleanup EXIT
+
+apt-get update -qq && apt-get install -y -qq git
+git clone --depth 1 --branch @BRANCH@ @REPO_URL@ /workspace/grug
+cd /workspace/grug
+pip install --no-cache-dir -e '.[train]'
+
+grug train prepare --out /workspace/data
+
+grug train run \
+  --data /workspace/data --out /workspace/ckpt \
+  --model @MODEL@ --epochs @EPOCHS@ \
+  --batch-size @BATCH@ --lr @LR@ \
+  --max-length @MAXLEN@ --cs-weight @CSW@ \
+  --device cuda
+
+cat > /tmp/push.py <<'PUSH_EOF'
+import json, os, pathlib
+from huggingface_hub import HfApi
+
+repo = "@HFREPO@"
+api = HfApi(token=os.environ["HF_TOKEN"])
+api.create_repo(repo, repo_type="model", private=@PRIVATE@, exist_ok=True)
+metrics = json.loads(pathlib.Path("/workspace/ckpt/metrics.json").read_text())
+last = metrics["history"][-1] if metrics["history"] else {}
+card = [
+    "---", "license: cc-by-nc-sa-4.0", "library_name: transformers",
+    "pipeline_tag: token-classification", "base_model: @MODEL@",
+    "tags:", "- prompt-compression", "- grug", "---", "",
+    "# grug prompt compressor", "",
+    "Binary preserve/discard token classifier for prompt compression, trained with",
+    "`grug train` on `microsoft/MeetingBank-LLMCompressed`.", "",
+    "```python", "import grug",
+    "from grug.backends.modern import ModernBackend", "",
+    "comp = grug.Compressor(ModernBackend(model_name=" + repr(repo) + "))",
+    "result = comp.compress(text, rate=0.4)", "```", "",
+    "## Training", "", "```json", json.dumps(metrics["config"], indent=2), "```", "",
+    "## Final epoch", "", "```json", json.dumps(last, indent=2), "```", "",
+    "The training corpus is CC-BY-NC-SA-4.0, so this model inherits a",
+    "non-commercial constraint.", "",
+]
+pathlib.Path("/workspace/ckpt/README.md").write_text("\n".join(card))
+api.upload_folder(folder_path="/workspace/ckpt", repo_id=repo, repo_type="model")
+print("GRUG_PUSHED", repo)
+PUSH_EOF
+
+python /tmp/push.py
+echo GRUG_TRAINING_COMPLETE
+"""
+
+
+def bootstrap(args) -> str:
+    """The single command the pod runs. Self-terminating, fail-fast."""
+    fields = {
+        "@TERMINATE@": _TERMINATE.strip(),
+        "@BRANCH@": args.branch,
+        "@REPO_URL@": REPO_URL,
+        "@MODEL@": args.model,
+        "@EPOCHS@": str(args.epochs),
+        "@BATCH@": str(args.batch_size),
+        "@LR@": str(args.lr),
+        "@MAXLEN@": str(args.max_length),
+        "@CSW@": str(args.cs_weight),
+        "@HFREPO@": args.repo,
+        "@PRIVATE@": str(bool(args.private)),
+    }
+    script = _BOOTSTRAP
+    for key, value in fields.items():
+        script = script.replace(key, value)
+    return script.strip()
+
+
+def main() -> int:
+    args = parse_args()
+    for key in ("RUNPOD_API_KEY", "HF_TOKEN"):
+        if not os.environ.get(key):
+            sys.exit(f"error: {key} is not set")
+
+    import runpod
+
+    runpod.api_key = os.environ["RUNPOD_API_KEY"]
+
+    print("Selecting GPU...")
+    gpu = pick_gpu(runpod, args)
+    examples = 31775
+    est_hours = args.epochs * examples / 70 / 3600  # ~70 ex/s on a 24GB card
+    print(
+        f"\n  chosen : {gpu['id']} ({gpu['vram']}GB) at ${gpu['price']:.3f}/hr"
+        f"\n  job    : {args.model}, {args.epochs} epochs, batch {args.batch_size}"
+        f"\n  push to: https://huggingface.co/{args.repo}"
+        f"\n  rough  : ~{est_hours:.1f}h  ->  ~${est_hours * gpu['price']:.2f}\n"
+    )
+
+    if not args.go:
+        print("DRY RUN - nothing created. Re-run with --go to launch.\n")
+        print(textwrap.indent(bootstrap(args), "  "))
+        return 0
+
+    pod = runpod.create_pod(
+        name=f"grug-train-{args.model.split('/')[-1]}",
+        image_name=args.image,
+        gpu_type_id=gpu["id"],
+        cloud_type="COMMUNITY",
+        container_disk_in_gb=40,
+        volume_in_gb=0,
+        min_memory_in_gb=16,
+        docker_args=f"bash -lc {bootstrap(args)!r}",
+        env={"HF_TOKEN": os.environ["HF_TOKEN"], "RUNPOD_API_KEY": os.environ["RUNPOD_API_KEY"]},
+    )
+    pod_id = pod["id"]
+    print(f"  pod {pod_id} created; polling every {args.poll}s. Ctrl-C stops polling, not the pod.")
+
+    started = time.time()
+    while True:
+        time.sleep(args.poll)
+        try:
+            status = runpod.get_pod(pod_id)
+        except Exception as exc:  # pod gone == it terminated itself
+            print(f"  pod no longer queryable ({exc}); assuming it finished")
+            break
+        if status is None:
+            print("  pod terminated")
+            break
+        runtime = status.get("runtime") or {}
+        print(
+            f"  [{(time.time() - started) / 60:5.1f}m] {status.get('desiredStatus')} {runtime.get('uptimeInSeconds', 0)}s"
+        )
+    print(f"\nDone. Check https://huggingface.co/{args.repo}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
