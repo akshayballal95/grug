@@ -532,8 +532,8 @@ def train_distill(
         )
         for variant in variants:
             template = distill.INSTRUCTIONS[variant]
-            prompts = [(template.format(text=p), "") for p in passages for _ in range(samples)]
-            flat = client.many(prompts)
+            prompts = [template.format(text=p) for p in passages for _ in range(samples)]
+            flat = client.complete_many(prompts)
             grouped = [flat[i * samples : (i + 1) * samples] for i in range(len(passages))]
             label = model.split("/")[-1] + (f" [{variant}]" if len(variants) > 1 else "")
             score = distill.score_teacher(label, passages, grouped)
