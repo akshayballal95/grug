@@ -14,6 +14,7 @@ therefore with the checkpoints :mod:`grug.training` produces.
 from __future__ import annotations
 
 import importlib.util
+import os
 import re
 from typing import Any
 
@@ -74,6 +75,7 @@ class ModernBackend(CompressorBackend):
         force_reserve_digit: bool = True,
         preserve_entities: bool = True,
         max_length: int | None = None,
+        token: str | None = None,
         **model_kwargs: Any,
     ) -> None:
         """
@@ -85,6 +87,8 @@ class ModernBackend(CompressorBackend):
             force_reserve_digit: Never drop a word containing a digit.
             preserve_entities: Pin proper nouns found in the input.
             max_length: Override the model's own context window.
+            token: Hugging Face token for a private checkpoint. Defaults to
+                ``HF_TOKEN`` (or ``HUGGING_FACE_HUB_TOKEN``) from the environment.
             **model_kwargs: Forwarded to ``from_pretrained``.
         """
         self.model_name = model_name
@@ -93,6 +97,10 @@ class ModernBackend(CompressorBackend):
         self.force_reserve_digit = force_reserve_digit
         self.preserve_entities = preserve_entities
         self.max_length = max_length
+        # Read the token here rather than relying on the hub library to find it:
+        # a private checkpoint otherwise fails with "not a valid model
+        # identifier", which reads like a typo rather than a missing token.
+        self.token = token or os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
         self.model_kwargs = model_kwargs
         self._model: Any = None
         self._tokenizer: Any = None
@@ -133,13 +141,16 @@ class ModernBackend(CompressorBackend):
         from transformers import AutoModelForTokenClassification, AutoTokenizer
 
         self._resolved_device = self._resolve_device()
-        self._tokenizer = AutoTokenizer.from_pretrained(self.model_name, **self.model_kwargs)
+        auth = {"token": self.token} if self.token else {}
+        self._tokenizer = AutoTokenizer.from_pretrained(
+            self.model_name, **auth, **self.model_kwargs
+        )
         if not self._tokenizer.is_fast:
             raise RuntimeError(
                 f"{self.model_name!r} has no fast tokenizer; word alignment needs word_ids()"
             )
         model, loading_info = AutoModelForTokenClassification.from_pretrained(
-            self.model_name, output_loading_info=True, **self.model_kwargs
+            self.model_name, output_loading_info=True, **auth, **self.model_kwargs
         )
         untrained = [k for k in loading_info.get("missing_keys", []) if "classifier" in k]
         if untrained:
