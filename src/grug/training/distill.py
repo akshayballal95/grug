@@ -76,22 +76,31 @@ def compress_with_teacher(text: str, client: Any) -> str:
     return client.one(TEACHER_INSTRUCTION.format(text=text), "")
 
 
-def _is_subsequence(original: list[str], compressed: list[str]) -> bool:
-    """Whether the output preserves input order -- condition 2 of the prompt.
+def _out_of_order_fraction(original: list[str], compressed: list[str]) -> float:
+    """Fraction of output words that could not be matched in input order.
 
-    Compared on normalised words: a teacher that recapitalises a sentence start
-    or drops a comma has not reordered anything, and scoring that as a
-    violation made every teacher look identical.
+    A fraction rather than a flag: one displaced word in four hundred is a
+    different thing from a wholesale rewrite, and a boolean scored both as a
+    total violation. Compared on normalised words so recapitalising a sentence
+    start is not counted as reordering.
     """
     from ..pinning import normalise_word
 
-    remaining = iter(normalise_word(w) for w in original)
-    for word in (normalise_word(w) for w in compressed):
-        if not word:
-            continue
-        if not any(word == candidate for candidate in remaining):
-            return False
-    return True
+    wanted = [w for w in (normalise_word(x) for x in compressed) if w]
+    if not wanted:
+        return 0.0
+    haystack = [normalise_word(w) for w in original]
+    cursor = matched = 0
+    for word in wanted:
+        # Scan forward from the last match. An unmatched word must not consume
+        # the rest of the input, or a single miss fails everything after it.
+        probe = cursor
+        while probe < len(haystack) and haystack[probe] != word:
+            probe += 1
+        if probe < len(haystack):
+            matched += 1
+            cursor = probe + 1
+    return 1.0 - matched / len(wanted)
 
 
 def _retention(original: str, compressed: str, kind: str) -> float | None:
@@ -134,7 +143,7 @@ def score_teacher(model: str, originals: list[str], samples: list[list[str]]) ->
             ratios.append(stats.keep_ratio)
             variations.append(stats.variation_rate)
             gaps.append(stats.alignment_gap)
-            orders.append(0.0 if _is_subsequence(stats.words, split_words(output)) else 1.0)
+            orders.append(_out_of_order_fraction(stats.words, split_words(output)))
             label_sets.append(stats.labels)
 
             for store, kind in ((negations, "negation"), (numbers, "number")):
