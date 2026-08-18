@@ -53,6 +53,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--image", default=DEFAULT_IMAGE)
     p.add_argument("--private", action="store_true", help="Create the Hub repo private.")
     p.add_argument(
+        "--hold",
+        type=int,
+        default=600,
+        help="On failure, keep the pod alive this long (s) for inspection.",
+    )
+    p.add_argument(
         "--go", action="store_true", help="Actually create the pod. Without this, dry run."
     )
     p.add_argument("--poll", type=int, default=60, help="Seconds between status polls.")
@@ -323,8 +329,10 @@ def main() -> int:
             gpu = candidate
             break
         except Exception as exc:
-            # Capacity comes and goes; a full GPU type is not a fatal error.
-            print(f"  {candidate['id']}: {str(exc)[:70]}")
+            message = str(exc)
+            if "no longer any instances" not in message and "not available" not in message:
+                raise  # a bug here must not masquerade as a full GPU
+            print(f"  {candidate['id']}: out of capacity")
     if pod is None:
         sys.exit("error: every affordable GPU type is out of capacity right now")
     print(f"  launched on {gpu['id']} at ${gpu['price']:.3f}/hr")
