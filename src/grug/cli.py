@@ -30,6 +30,7 @@ from .chunking import DEFAULT_CHUNK_TOKENS, looks_like_code
 from .registry import (
     BackendNotFoundError,
     backend_info,
+    create_backend,
     default_backend_name,
     get_backend_class,
 )
@@ -535,6 +536,89 @@ def train_evaluate(
             f"clean={row['clean_fraction']:.2f}  {row['seconds_per_doc']:.2f}s/doc"
         )
     json.dump(report, sys.stdout, indent=2)
+    sys.stdout.write("\n")
+
+
+bench_app = typer.Typer(
+    name="benchmark",
+    help="Measure whether a compressed prompt still answers questions. Needs the bench extra.",
+    no_args_is_help=True,
+)
+app.add_typer(bench_app)
+
+
+def _benchmark(module: str) -> Any:
+    import importlib
+
+    try:
+        return importlib.import_module(f"grug.benchmark.{module}")
+    except ImportError as exc:
+        _err(f"error: grug benchmark needs: pip install 'grug[bench]'  ({exc})")
+        raise typer.Exit(EXIT_ERROR) from exc
+
+
+def _make_backend(spec: str) -> tuple[str, Any]:
+    """``rules`` or ``modern:hub/model-id`` -> (display name, backend)."""
+    name, _, model_id = spec.partition(":")
+    if not model_id:
+        return name, create_backend(name)
+    from .backends.modern import ModernBackend
+
+    label = model_id.split("/")[-1]
+    return label, ModernBackend(model_name=model_id, device="cpu")
+
+
+@bench_app.command("qa")
+def benchmark_qa(
+    model: Annotated[
+        str,
+        typer.Option("--model", "-m", help="litellm model id, e.g. bedrock/moonshotai.kimi-k2.5"),
+    ],
+    backends: Annotated[
+        str,
+        typer.Option("--backends", "-b", help="Comma list. 'rules', 'lingua2', 'modern:hub/id'."),
+    ] = "rules,lingua2",
+    rates: Annotated[str, typer.Option("--rates", help="Comma list of rates.")] = "0.5,0.33",
+    limit: Annotated[int, typer.Option("--limit", min=1, help="Contexts to evaluate.")] = 25,
+    out: Annotated[str, typer.Option("--out", "-o", help="Directory for results.")] = "benchmarks",
+    workers: Annotated[int, typer.Option("--workers", min=1, help="Concurrent LLM calls.")] = 8,
+    metric: Annotated[
+        str, typer.Option("--metric", help="Metric plotted on the chart.")
+    ] = "exact_match",
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Use a stub LLM; make no API calls.")
+    ] = False,
+) -> None:
+    """Compress contexts, answer questions about them, and score the answers."""
+    qa = _benchmark("qa")
+    runner = _benchmark("runner")
+    report = _benchmark("report")
+    llm = _benchmark("llm")
+
+    examples = qa.load_qa(limit=limit)
+    _err(f"loaded {len(examples)} contexts, {sum(len(e.questions) for e in examples)} questions")
+
+    built: dict[str, Any] = {}
+    for spec in [s for s in backends.split(",") if s.strip()]:
+        try:
+            label, backend = _make_backend(spec.strip())
+            built[label] = backend
+        except Exception as exc:
+            _err(f"error: backend {spec!r}: {exc}")
+            raise typer.Exit(EXIT_ERROR) from exc
+
+    client = llm.StubClient() if dry_run else llm.LLMClient(model=model, workers=workers)
+    rate_list = [float(r) for r in rates.split(",") if r.strip()]
+
+    rows = runner.run_benchmark(examples, built, rate_list, client)
+
+    directory = Path(out)
+    runner.save(rows, directory / "results.json")
+    report.to_csv(rows, directory / "results.csv")
+    report.to_svg(rows, directory / "results.svg", metric=metric)
+    _err(f"wrote {directory}/results.json, results.csv, results.svg")
+
+    json.dump([r.__dict__ for r in rows], sys.stdout, indent=2, default=str)
     sys.stdout.write("\n")
 
 

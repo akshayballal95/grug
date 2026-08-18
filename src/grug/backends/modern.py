@@ -20,7 +20,7 @@ from typing import Any
 from ..base import CompressionResult, CompressorBackend, MissingDependencyError
 from ..pinning import NUMBER_RE, collect_force_tokens, normalise_word
 from ..registry import register_backend
-from ..verify import NEGATION_FORCE_TOKENS
+from ..verify import NEGATION_FORCE_TOKENS, is_negation
 
 __all__ = ["DEFAULT_MODEL", "ModernBackend"]
 
@@ -178,7 +178,10 @@ class ModernBackend(CompressorBackend):
             normalise_word(w) for w in collect_force_tokens(text, base, entities=preserve_entities)
         }
         for i, word in enumerate(words):
-            pinned = word.startswith("\n") or normalise_word(word) in forced
+            core = normalise_word(word)
+            # is_negation catches -n't contractions, whose cue is a suffix and
+            # so never matches a force list of whole words.
+            pinned = word.startswith("\n") or core in forced or is_negation(core)
             if pinned or (reserve_digit and NUMBER_RE.search(word)):
                 probs[i] = 1.0
 

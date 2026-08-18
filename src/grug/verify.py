@@ -17,6 +17,7 @@ __all__ = [
     "find_negation_scopes",
     "find_negations",
     "find_numbers",
+    "is_negation",
     "verify",
 ]
 
@@ -122,6 +123,17 @@ def _norm_number(raw: str) -> str:
     still folds, so ``V2`` and ``v2`` are one number.
     """
     return raw.lower().replace(",", "")
+
+
+def is_negation(word: str) -> bool:
+    """Whether a word is a negation cue.
+
+    Contractions are the reason this exists as a function: the cue in
+    ``doesn't`` is a *suffix*, so a force list holding the literal "n't" never
+    matches the whole word, and the negation goes unprotected.
+    """
+    lowered = word.lower()
+    return lowered.endswith("n't") or lowered in NEGATION_WORDS
 
 
 def find_negations(text: str) -> dict[str, int]:

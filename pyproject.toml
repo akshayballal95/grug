@@ -50,6 +50,12 @@ modern = [
   "torch>=2.0",
   "transformers>=4.48",
 ]
+bench = [
+  "grug[modern]",
+  "datasets>=2.18",
+  "litellm>=1.40",
+  "boto3>=1.34",
+]
 train = [
   "grug[modern]",
   "datasets>=2.18",
