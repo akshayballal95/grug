@@ -565,6 +565,10 @@ def _make_backend(spec: str) -> tuple[str, Any]:
     from .backends.modern import ModernBackend
 
     label = model_id.split("/")[-1]
+    for prefix in ("grug-",):
+        label = label.removeprefix(prefix)
+    for suffix in ("-meetingbank",):
+        label = label.removesuffix(suffix)
     return label, ModernBackend(model_name=model_id, device="cpu")
 
 

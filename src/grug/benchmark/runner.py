@@ -130,7 +130,7 @@ def run_benchmark(
         rows.append(row)
         if progress:
             print(
-                f"  {name:<18}rate={rate:<5.2f} ratio={row.ratio:.2f} "
+                f"  {name:<20} rate={rate:<5.2f} ratio={row.ratio:.2f} "
                 f"EM={row.exact_match:.3f} F1={row.f1:.3f} "
                 f"neg_loss={row.negation_loss_rate:.2f}",
                 flush=True,
