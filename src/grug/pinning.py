@@ -189,7 +189,12 @@ def restore_forced(original: str, compressed: str, forced: Iterable[str]) -> tup
 
 
 def collect_force_tokens(
-    text: str, base: Iterable[str], *, entities: bool, numbers: bool = False
+    text: str,
+    base: Iterable[str],
+    *,
+    entities: bool,
+    numbers: bool = False,
+    limit: int | None = None,
 ) -> list[str]:
     """The list of tokens a compressor may not drop.
 
@@ -199,6 +204,12 @@ def collect_force_tokens(
 
     ``numbers`` is off by default because LLMLingua-2 has ``force_reserve_digit``
     and does not need the help; the causal-LM path has no such option.
+
+    ``limit`` truncates the result, dropping the least important sources first.
+    LLMLingua-2 asserts on a force list longer than its ``max_force_token``, and
+    a long document produces more proper nouns than that on its own. Priority is
+    negations, then protected spans, then numbers, then entities -- so what
+    survives truncation is what inverts meaning if lost.
     """
     forced: list[str] = []
     for token in base:
@@ -213,11 +224,19 @@ def collect_force_tokens(
             if variant not in forced:
                 forced.append(variant)
 
-    extra = {m.group(0) for m in PLACEHOLDER_RE.finditer(text)}
-    if entities:
-        extra |= {word for entity in find_entities(text) for word in entity.split() if word}
-    if numbers:
-        extra |= {m.group(0) for m in NUMBER_RE.finditer(text)}
-
     seen = set(forced)
-    return forced + sorted(extra - seen)
+    ranked: list[str] = list(forced)
+
+    def add(candidates: set[str]) -> None:
+        for token in sorted(candidates - seen):
+            seen.add(token)
+            ranked.append(token)
+
+    # Ordered by what it costs to lose them.
+    add({m.group(0) for m in PLACEHOLDER_RE.finditer(text)})
+    if numbers:
+        add({m.group(0) for m in NUMBER_RE.finditer(text)})
+    if entities:
+        add({word for entity in find_entities(text) for word in entity.split() if word})
+
+    return ranked[:limit] if limit is not None else ranked

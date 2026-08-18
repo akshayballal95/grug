@@ -31,6 +31,11 @@ DEFAULT_MODEL = "microsoft/llmlingua-2-bert-base-multilingual-cased-meetingbank"
 DEFAULT_FORCE_TOKENS: tuple[str, ...] = ("\n", "?", *NEGATION_FORCE_TOKENS)
 
 
+def _max_force_tokens(model: Any) -> int:
+    """LLMLingua-2 asserts if the force list is longer than this."""
+    return int(getattr(model, "max_force_token", 100))
+
+
 @register_backend
 class Lingua2Backend(CompressorBackend):
     """Token-classification compression via ``llmlingua.PromptCompressor``."""
@@ -160,6 +165,7 @@ class Lingua2Backend(CompressorBackend):
                 text,
                 overrides.pop("force_tokens", self.force_tokens),
                 entities=overrides.pop("preserve_entities", self.preserve_entities),
+                limit=_max_force_tokens(model),
             ),
             "force_reserve_digit": overrides.pop("force_reserve_digit", self.force_reserve_digit),
             "drop_consecutive": overrides.pop("drop_consecutive", self.drop_consecutive),
