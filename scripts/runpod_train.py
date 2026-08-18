@@ -159,7 +159,7 @@ card = [
     "The training corpus is CC-BY-NC-SA-4.0, so this model inherits a",
     "non-commercial constraint.", "",
 ]
-pathlib.Path("/workspace/ckpt/README.md").write_text("\n".join(card))
+pathlib.Path("/workspace/ckpt/README.md").write_text(chr(10).join(card))
 api.upload_folder(folder_path="/workspace/ckpt", repo_id=repo, repo_type="model")
 print("GRUG_PUSHED", repo)
 PUSH_EOF
