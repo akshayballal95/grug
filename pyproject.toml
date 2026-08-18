@@ -36,7 +36,25 @@ lingua2 = [
   "transformers>=4.36",
   "accelerate>=0.26",
 ]
+# Same dependencies as lingua2 -- the difference is which checkpoint gets
+# downloaded at run time, not what gets installed. Declared separately so a
+# missing-dependency error can name the extra the caller actually asked for.
+longlingua = [
+  "llmlingua>=0.2.1",
+  "torch>=2.0",
+  "transformers>=4.36",
+  "accelerate>=0.26",
+]
 tokens = ["tiktoken>=0.5"]
+modern = [
+  "torch>=2.0",
+  "transformers>=4.48",
+]
+train = [
+  "grug[modern]",
+  "datasets>=2.18",
+  "huggingface-hub>=0.23",
+]
 dev = [
   "pytest>=8.0",
   "ruff>=0.6",

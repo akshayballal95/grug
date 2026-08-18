@@ -129,6 +129,15 @@ def compress(
         str | None,
         typer.Option("--device", help="Backend device hint, e.g. cpu, cuda, mps, auto."),
     ] = None,
+    question: Annotated[
+        str | None,
+        typer.Option(
+            "--question",
+            "-Q",
+            help="What the output must stay sufficient to answer. Selects a "
+            "question-aware backend unless -b names one.",
+        ),
+    ] = None,
     verify: Annotated[
         bool, typer.Option("--verify/--no-verify", help="Run faithfulness checks.")
     ] = True,
@@ -147,7 +156,7 @@ def compress(
         raise typer.Exit(EXIT_ERROR)
 
     try:
-        compressor = _build_compressor(backend, device, verify, chunk_tokens)
+        compressor = _build_compressor(backend, device, verify, chunk_tokens, question)
     except (BackendNotFoundError, MissingDependencyError, TypeError) as exc:
         _err(f"error: {exc}")
         raise typer.Exit(EXIT_ERROR) from exc
@@ -167,7 +176,7 @@ def compress(
 
         started = time.perf_counter()
         try:
-            result = compressor.compress(text, rate=rate)
+            result = compressor.compress(text, rate=rate, question=question)
         except Exception as exc:  # a backend blowing up is a per-file failure
             _err(f"error: {source}: {exc}")
             had_error = True
@@ -200,11 +209,16 @@ def compress(
 
 
 def _build_compressor(
-    backend: str | None, device: str | None, verify: bool, chunk_tokens: int
+    backend: str | None,
+    device: str | None,
+    verify: bool,
+    chunk_tokens: int,
+    question: str | None = None,
 ) -> Any:
+    """Resolve the backend and wrap it. A question only steers an unnamed one."""
     from . import Compressor
 
-    name = backend or default_backend_name()
+    name = backend or default_backend_name(question=bool(question))
     kwargs: dict[str, Any] = {}
     if device is not None:
         kwargs["device"] = device
@@ -300,6 +314,112 @@ def _tokenizer_note() -> str:
     return (
         name if name != "whitespace" else "whitespace splitting (install tiktoken for cl100k_base)"
     )
+
+
+train_app = typer.Typer(
+    name="train",
+    help="Reproduce the compressor: corpus, labels, fine-tuned encoder. Needs the train extra.",
+    no_args_is_help=True,
+)
+app.add_typer(train_app)
+
+
+def _training(module: str) -> Any:
+    """Import a training module, or explain which extra installs it."""
+    import importlib
+
+    try:
+        return importlib.import_module(f"grug.training.{module}")
+    except ImportError as exc:
+        _err(f"error: grug train needs the training extra: pip install 'grug[train]'  ({exc})")
+        raise typer.Exit(EXIT_ERROR) from exc
+
+
+@train_app.command("prepare")
+def train_prepare(
+    out: Annotated[
+        str, typer.Option("--out", "-o", help="Directory for the JSONL shards.")
+    ] = "data",
+    dataset: Annotated[
+        str, typer.Option("--dataset", help="Hugging Face dataset id.")
+    ] = "microsoft/MeetingBank-LLMCompressed",
+    limit: Annotated[
+        int | None, typer.Option("--limit", help="Stop after N rows (smoke runs).")
+    ] = None,
+    val_fraction: Annotated[float, typer.Option("--val-fraction", min=0.0, max=0.5)] = 0.05,
+) -> None:
+    """Download the distillation corpus and derive per-word keep/drop labels."""
+    data = _training("data")
+    summary = data.prepare(out, dataset=dataset, limit=limit, val_fraction=val_fraction)
+    _err(
+        f"{summary['pairs_kept']}/{summary['pairs_aligned']} pairs kept, "
+        f"{summary['words']} words, keep rate {summary['keep_rate']:.2f} -> {out}"
+    )
+    json.dump(summary, sys.stdout, indent=2)
+    sys.stdout.write("\n")
+
+
+@train_app.command("run")
+def train_run(
+    data: Annotated[
+        str, typer.Option("--data", "-d", help="Directory written by 'train prepare'.")
+    ] = "data",
+    out: Annotated[str, typer.Option("--out", "-o", help="Where to save the checkpoint.")] = "out",
+    model: Annotated[
+        str, typer.Option("--model", "-m", help="Base encoder to fine-tune.")
+    ] = "answerdotai/ModernBERT-base",
+    epochs: Annotated[int, typer.Option("--epochs", min=1)] = 10,
+    batch_size: Annotated[int, typer.Option("--batch-size", min=1)] = 10,
+    learning_rate: Annotated[float, typer.Option("--lr")] = 1e-5,
+    max_length: Annotated[int, typer.Option("--max-length", min=16)] = 512,
+    device: Annotated[str, typer.Option("--device")] = "auto",
+    cs_weight: Annotated[
+        float,
+        typer.Option(
+            "--cs-weight", help="MOOSComp inter-class cosine loss weight. 0 reproduces LLMLingua-2."
+        ),
+    ] = 0.0,
+) -> None:
+    """Fine-tune an encoder into a preserve/discard token classifier."""
+    trainer = _training("trainer")
+    config = trainer.TrainConfig(
+        model_name=model,
+        epochs=epochs,
+        batch_size=batch_size,
+        learning_rate=learning_rate,
+        max_length=max_length,
+        device=device,
+        cs_weight=cs_weight,
+    )
+    metrics = trainer.train(data, out, config)
+    _err(f"saved checkpoint to {out}")
+    json.dump(metrics["history"][-1] if metrics["history"] else {}, sys.stdout, indent=2)
+    sys.stdout.write("\n")
+
+
+@train_app.command("evaluate")
+def train_evaluate(
+    model: Annotated[str, typer.Option("--model", "-m", help="Checkpoint directory or hub id.")],
+    files: Annotated[list[str] | None, typer.Argument(help="Documents to evaluate on.")] = None,
+    device: Annotated[str, typer.Option("--device")] = "auto",
+    out: Annotated[
+        str | None, typer.Option("--out", "-o", help="Write the JSON report here.")
+    ] = None,
+) -> None:
+    """Measure achieved ratio and faithfulness for a checkpoint."""
+    evaluate = _training("evaluate")
+    documents = [_read(f) for f in (files or [])]
+    if not documents:
+        _err("error: pass at least one document to evaluate on")
+        raise typer.Exit(EXIT_ERROR)
+    report = evaluate.evaluate_checkpoint(model, documents, device=device, out_file=out)
+    for row in report["rows"]:
+        _err(
+            f"rate={row['rate']:.2f}  ratio={row['ratio']:.2f}  "
+            f"clean={row['clean_fraction']:.2f}  {row['seconds_per_doc']:.2f}s/doc"
+        )
+    json.dump(report, sys.stdout, indent=2)
+    sys.stdout.write("\n")
 
 
 def main() -> None:

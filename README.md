@@ -8,8 +8,10 @@ articles, copulas, filler, pleasantries — and keeps the ones that do: numbers,
 names, and above all **negations**. Compression runs through a pluggable backend:
 the default ships a rule-based stripper with zero dependencies, and
 `pip install grug[lingua2]` swaps in LLMLingua-2's token-classification model for
-much more aggressive rates. Every result comes back with a faithfulness report,
-because a prompt that is 60% smaller and 5% wrong is not a win.
+much more aggressive rates. Pass a `--question` and grug switches to a
+question-aware backend that keeps the tokens *that question* depends on. Every
+result comes back with a faithfulness report, because a prompt that is 60%
+smaller and 5% wrong is not a win.
 
 ### Before, 94 tokens
 
@@ -33,8 +35,9 @@ negations — the second one (`not price`) is the entire point of the paragraph.
 ## Install
 
 ```bash
-pip install grug              # core + rules backend + CLI. No torch.
-pip install 'grug[lingua2]'   # adds llmlingua, torch, transformers.
+pip install grug                 # core + rules backend + CLI. No torch.
+pip install 'grug[lingua2]'      # adds llmlingua, torch, transformers.
+pip install 'grug[longlingua]'   # same deps, question-aware backend.
 ```
 
 `import grug` never imports torch, even with the extra installed. Backends load
@@ -63,6 +66,7 @@ Stats go to stderr so stdout stays pipeable:
 | --- | --- |
 | `--rate`, `-r` | Fraction of tokens to keep. Default `0.5`. |
 | `--backend`, `-b` | Backend name. Default: best installed. |
+| `--question`, `-Q` | What the output must stay sufficient to answer. Selects a question-aware backend unless `-b` names one. |
 | `--device` | `cpu`, `cuda`, `mps`, or `auto`, for backends that use one. |
 | `--no-verify` | Skip the faithfulness checks. |
 | `--json` | Emit the full `CompressionResult` as JSON on stdout; write no files. |
@@ -104,7 +108,11 @@ result.metadata  # backend-specific extras
 comp = grug.Compressor(backend="lingua2", device="cuda")  # model loads once
 results = comp.compress_batch(documents, rate=0.5)
 
-grug.list_backends()  # ['lingua2', 'rules']
+# A question selects a question-aware backend and conditions the scoring on it.
+result = grug.compress(text, rate=0.4, question="what was the p99 lag?")
+result.metadata["backend_metadata"]["conditioned"]  # True
+
+grug.list_backends()  # ['lingua2', 'longlingua', 'rules']
 grug.verify(original, compressed)  # -> list[str], standalone
 ```
 
@@ -126,7 +134,10 @@ pattern-matched, so structure survives compression intact:
 Using a real parser matters: a pipe inside a fence is not a table row, an
 indented block is still code, and a code span may wrap across a line. The
 `lingua2` backend additionally pins every placeholder in `force_tokens`, so a
-protected span comes back verbatim or not at all — never rewritten.
+protected span comes back verbatim or not at all — never rewritten. `longlingua`
+reaches the same guarantee from the other end: its tokenizer shreds a
+placeholder into subwords, so grug drops the fragments and splices the intact
+placeholder back.
 
 Long documents are chunked to ~450 tokens on sentence boundaries before they
 reach the backend, then rejoined with the original layout.
@@ -151,6 +162,7 @@ run in CI. See [`examples/README.md`](examples/README.md) for what each covers.
 | --- | --- | --- | --- | --- |
 | `rules` | included | Deletes stopwords, fillers, and pleasantry phrases from curated lists | ~0.6 floor — it runs out of safe words to drop | milliseconds |
 | `lingua2` | `grug[lingua2]` | LLMLingua-2 token classification (BERT), keeps the top-scoring `rate` fraction | 0.2–0.5 | ~0.2 s for a 400-token document on a laptop CPU, after a one-off model load |
+| `longlingua` | `grug[longlingua]` | LongLLMLingua contrastive perplexity (causal LM), keeps the tokens a *question* makes predictable | 0.2–0.5 | slowest — two forward passes per chunk through a causal LM |
 
 Both are **extractive**: the output is a subsequence of the input, so neither can
 invent a fact. The backend interface does not require this — a generative
@@ -161,6 +173,51 @@ output with appropriate suspicion. None ships yet.
 `rate` means the same thing everywhere: the fraction of tokens to **keep**. A
 backend that cannot hit the number exactly approximates it and reports what it
 actually achieved in `result.ratio`.
+
+## Question conditioning
+
+`lingua2` is task-agnostic by design: it scores a token by how much it carries,
+full stop. That is the right default when you do not know what the compressed
+text will be used for. When you *do*, `longlingua` scores each token twice —
+once with the question as a prefix, once without — and keeps the tokens whose
+surprisal the question lowers most:
+
+```
+score(token) = perplexity(token | context) − perplexity(token | question, context)
+```
+
+A token survives not because it is rare but because knowing the question makes
+it predictable. That is the closest thing available to "do not drop what I need
+in order to answer this".
+
+```bash
+grug compress incident.md -Q "which accounts were affected, and how many?"
+```
+
+```python
+grug.compress(doc, rate=0.4, question="which accounts were affected?")
+```
+
+Three things worth knowing before you rely on it:
+
+- **It is a prior, not a pin.** Conditioning reweights the ranking. Nothing
+  guarantees the one number your question hinges on clears the threshold — that
+  is what the force-token machinery below is for, and on this backend it runs
+  after the model rather than inside it, because `force_tokens` is an
+  LLMLingua-2-only argument that the causal-LM path silently ignores.
+- **Each chunk is conditioned independently.** You get the token-level
+  contrastive filter, not LongLLMLingua's cross-chunk budget reallocation:
+  grug rejoins chunks on their recorded separators, so letting the library rank
+  and drop whole contexts would break the reassembly.
+- **Naming a backend wins.** `-b`/`backend=` binds your choice; a question will
+  never swap it out. If that backend is not question-aware, the question is
+  ignored *with a warning* rather than silently.
+
+The causal-LM path also filters raw tokens rather than whole words, so a BPE
+model will happily keep `acy` out of `legacy`. grug snaps the output back onto
+whole words of the input before pinning, which is what keeps the guarantee that
+output is a subsequence of input — and keeps protected spans intact rather than
+shredded.
 
 ## Faithfulness
 
@@ -240,6 +297,7 @@ class ShoutyBackend(CompressorBackend):
     description = "Keeps only the long words."
     extra = "shouty"  # named in the missing-dependency error
     generative = False  # True if you rewrite rather than select
+    question_aware = False  # True if compress() conditions on a question kwarg
 
     def compress(self, text: str, rate: float = 0.5, **kwargs) -> CompressionResult:
         self._validate_rate(rate)
@@ -266,7 +324,18 @@ Notes for real backends:
   every compressible chunk of a document at once. The default is a loop.
 - `CompressionResult.build()` derives token counts and the achieved ratio for
   you, using `cl100k_base` so numbers stay comparable across backends.
+- Set `question_aware = True` if your `compress()` accepts a `question` keyword
+  and conditions on it. Backend selection keys on the flag, not on a name, so a
+  question-aware backend installed from an entry point is picked automatically
+  when a caller passes a question and names no backend.
 - In-process registration works too: `@grug.register_backend` on the class.
+
+## Training your own compressor
+
+grug ships the training pipeline too: `pip install 'grug[train]'` then
+`grug train prepare | run | evaluate`. See [TRAINING.md](TRAINING.md) for the
+full reproduction — corpus, label derivation, encoder choice, and how
+faithfulness is measured.
 
 ## Not in this release
 

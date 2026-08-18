@@ -1,0 +1,149 @@
+"""Turn the public distillation corpus into per-word training labels.
+
+``microsoft/MeetingBank-LLMCompressed`` ships (original, compressed) *text*
+pairs, not labels, so the labels are derived here with the paper's alignment
+algorithm. The dataset is CC-BY-NC-SA-4.0: anything trained on it inherits a
+non-commercial constraint.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from .alignment import AlignmentStats, annotate, filter_examples
+
+__all__ = ["DEFAULT_DATASET", "Example", "prepare", "read_jsonl"]
+
+DEFAULT_DATASET = "microsoft/MeetingBank-LLMCompressed"
+
+#: Chunk-level columns. The whole-document columns exist too, but the teacher
+#: compressed chunk by chunk, so these pair up far more reliably.
+_ORIGINAL_COLUMN = "prompt_list"
+_COMPRESSED_COLUMN = "compressed_prompt_list"
+
+
+@dataclass
+class Example:
+    """One training example: words of the original, and whether each survived."""
+
+    words: list[str]
+    labels: list[int]
+
+    def to_json(self) -> str:
+        return json.dumps({"words": self.words, "labels": self.labels})
+
+
+def _require_datasets() -> Any:
+    try:
+        import datasets
+    except ImportError as exc:  # pragma: no cover - guarded by the extra
+        raise ImportError(
+            "grug.training.data requires 'datasets'. Install it with: pip install 'grug[train]'"
+        ) from exc
+    return datasets
+
+
+def _pairs(row: dict[str, Any]) -> list[tuple[str, str]]:
+    """Chunk pairs from one row, falling back to the whole-document columns."""
+    originals = row.get(_ORIGINAL_COLUMN)
+    compressed = row.get(_COMPRESSED_COLUMN)
+    if isinstance(originals, str):
+        originals = json.loads(originals)
+    if isinstance(compressed, str):
+        compressed = json.loads(compressed)
+    if originals and compressed and len(originals) == len(compressed):
+        return list(zip(originals, compressed, strict=True))
+    whole, whole_compressed = row.get("prompt"), row.get("compressed_prompt")
+    return [(whole, whole_compressed)] if whole and whole_compressed else []
+
+
+def prepare(
+    out_dir: str | Path,
+    *,
+    dataset: str = DEFAULT_DATASET,
+    split: str = "train",
+    limit: int | None = None,
+    val_fraction: float = 0.05,
+    seed: int = 0,
+) -> dict[str, Any]:
+    """Download the corpus, derive labels, filter, and write JSONL shards.
+
+    Args:
+        out_dir: Directory to write ``train.jsonl`` and ``val.jsonl`` into.
+        dataset: Hugging Face dataset id.
+        split: Split to read.
+        limit: Stop after this many rows. Useful for a smoke run.
+        val_fraction: Portion held out for validation.
+        seed: Shuffle seed for the split.
+
+    Returns:
+        A summary dict, also written to ``summary.json`` so a run is auditable.
+    """
+    datasets = _require_datasets()
+    rows = datasets.load_dataset(dataset, split=split)
+    if limit is not None:
+        rows = rows.select(range(min(limit, len(rows))))
+
+    stats: list[AlignmentStats] = []
+    for row in rows:
+        for original, compressed in _pairs(row):
+            if original and compressed:
+                stats.append(annotate(original, compressed))
+
+    kept, thresholds = filter_examples(stats)
+    return _write(out_dir, kept, thresholds, dataset, split, len(stats), val_fraction, seed)
+
+
+def _write(
+    out_dir: str | Path,
+    kept: list[AlignmentStats],
+    thresholds: dict[str, float],
+    dataset: str,
+    split: str,
+    total: int,
+    val_fraction: float,
+    seed: int,
+) -> dict[str, Any]:
+    import random
+
+    directory = Path(out_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+
+    examples = [Example(e.words, [int(x) for x in e.labels]) for e in kept]
+    random.Random(seed).shuffle(examples)
+    cut = max(1, int(len(examples) * val_fraction)) if examples else 0
+    shards = {"val": examples[:cut], "train": examples[cut:]}
+
+    for name, rowset in shards.items():
+        with (directory / f"{name}.jsonl").open("w", encoding="utf-8") as handle:
+            for example in rowset:
+                handle.write(example.to_json() + "\n")
+
+    total_words = sum(len(e.words) for e in examples)
+    summary = {
+        "dataset": dataset,
+        "split": split,
+        "pairs_aligned": total,
+        "pairs_kept": len(examples),
+        "train": len(shards["train"]),
+        "val": len(shards["val"]),
+        "words": total_words,
+        "keep_rate": (sum(sum(e.labels) for e in examples) / total_words if total_words else 0.0),
+        **thresholds,
+    }
+    (directory / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    return summary
+
+
+def read_jsonl(path: str | Path) -> list[Example]:
+    """Read a shard written by :func:`prepare`."""
+    examples = []
+    with Path(path).open(encoding="utf-8") as handle:
+        for line in handle:
+            if line.strip():
+                payload = json.loads(line)
+                examples.append(Example(payload["words"], payload["labels"]))
+    return examples
