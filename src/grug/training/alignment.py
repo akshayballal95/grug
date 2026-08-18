@@ -55,14 +55,8 @@ def _normalise(word: str) -> str:
     return "".join(c for c in decomposed if not unicodedata.combining(c))
 
 
-def fuzzy_match(a: str, b: str, *, threshold: float = 0.8) -> bool:
-    """Whether two words are the same word, allowing for teacher variation.
-
-    Exact after normalisation, or a shared prefix (``program``/``programs``,
-    ``consent``/``consenting``), or a high enough character-level ratio. The
-    prefix rule is what handles the paper's "Variation" case.
-    """
-    x, y = _normalise(a), _normalise(b)
+def _matches(x: str, y: str, threshold: float) -> bool:
+    """Compare two already-normalised words. The hot path of :func:`align`."""
     if not x or not y:
         return x == y
     if x == y:
@@ -73,6 +67,16 @@ def fuzzy_match(a: str, b: str, *, threshold: float = 0.8) -> bool:
     if abs(len(x) - len(y)) > 3:
         return False
     return SequenceMatcher(None, x, y).ratio() >= threshold
+
+
+def fuzzy_match(a: str, b: str, *, threshold: float = 0.8) -> bool:
+    """Whether two words are the same word, allowing for teacher variation.
+
+    Exact after normalisation, or a shared prefix (``program``/``programs``,
+    ``consent``/``consenting``), or a high enough character-level ratio. The
+    prefix rule is what handles the paper's "Variation" case.
+    """
+    return _matches(_normalise(a), _normalise(b), threshold)
 
 
 def align(
@@ -97,16 +101,22 @@ def align(
     if not words or not targets:
         return words, labels
 
+    # Normalise once. The scan compares the same original words thousands of
+    # times, and normalising inside the comparison dominated the whole stage.
+    normalised = [_normalise(w) for w in words]
+    reach = max(1, window // 2)
+
     previous = 0
     for target in targets:
-        for offset in range(1, max(1, window // 2) + 1):
+        needle = _normalise(target)
+        for offset in range(1, reach + 1):
             right = min(len(words) - 1, previous + offset)
-            if fuzzy_match(target, words[right]):
+            if _matches(needle, normalised[right], 0.8):
                 labels[right] = True
                 previous = right
                 break
             left = max(0, previous - offset)
-            if fuzzy_match(target, words[left]):
+            if _matches(needle, normalised[left], 0.8):
                 labels[left] = True
                 break
             if right == len(words) - 1 and left == 0:
