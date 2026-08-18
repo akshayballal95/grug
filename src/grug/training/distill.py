@@ -77,9 +77,21 @@ def compress_with_teacher(text: str, client: Any) -> str:
 
 
 def _is_subsequence(original: list[str], compressed: list[str]) -> bool:
-    """Whether the output preserves input order -- condition 2 of the prompt."""
-    it = iter(original)
-    return all(any(w == o for o in it) for w in compressed)
+    """Whether the output preserves input order -- condition 2 of the prompt.
+
+    Compared on normalised words: a teacher that recapitalises a sentence start
+    or drops a comma has not reordered anything, and scoring that as a
+    violation made every teacher look identical.
+    """
+    from ..pinning import normalise_word
+
+    remaining = iter(normalise_word(w) for w in original)
+    for word in (normalise_word(w) for w in compressed):
+        if not word:
+            continue
+        if not any(word == candidate for candidate in remaining):
+            return False
+    return True
 
 
 def _retention(original: str, compressed: str, kind: str) -> float | None:
