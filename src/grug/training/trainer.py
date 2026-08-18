@@ -34,6 +34,9 @@ class TrainConfig:
     warmup_ratio: float = 0.06
     device: str = "auto"
     seed: int = 0
+    #: Hub repo to stream per-epoch metrics to. Training on a remote GPU is
+    #: otherwise a black box until it finishes.
+    push_to: str | None = None
     #: Weight on the MOOSComp inter-class cosine similarity term. 0 reproduces
     #: the LLMLingua-2 objective exactly; raise it to separate the two classes
     #: in the final layer, which is where over-smoothing bites.
@@ -178,18 +181,58 @@ def train(
         history.append(entry)
         if progress:
             print(f"  -> {entry}", flush=True)
+        _write_metrics(out_dir, config, device, len(train_set), len(val_set), history)
+        _publish(config.push_to, out_dir, epoch + 1, config.epochs)
 
     model.save_pretrained(out_dir)
     tokenizer.save_pretrained(out_dir)
+    return _write_metrics(out_dir, config, device, len(train_set), len(val_set), history)
+
+
+def _write_metrics(
+    out_dir: Path,
+    config: TrainConfig,
+    device: str,
+    train_examples: int,
+    val_examples: int,
+    history: list[dict[str, float]],
+) -> dict[str, Any]:
+    """Write metrics.json after every epoch, not just at the end."""
     metrics = {
         "config": asdict(config),
         "device": device,
-        "train_examples": len(train_set),
-        "val_examples": len(val_set),
+        "train_examples": train_examples,
+        "val_examples": val_examples,
+        "epochs_done": len(history),
         "history": history,
     }
     (out_dir / "metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
     return metrics
+
+
+def _publish(repo: str | None, out_dir: Path, epoch: int, total: int) -> None:
+    """Upload the running metrics to the Hub so progress is visible remotely.
+
+    Never fatal: losing a progress ping must not kill a training run.
+    """
+    if not repo:
+        return
+    try:
+        import os
+
+        from huggingface_hub import HfApi
+
+        api = HfApi(token=os.environ.get("HF_TOKEN"))
+        api.create_repo(repo, repo_type="model", private=True, exist_ok=True)
+        api.upload_file(
+            path_or_fileobj=str(out_dir / "metrics.json"),
+            path_in_repo="metrics.json",
+            repo_id=repo,
+            repo_type="model",
+            commit_message=f"epoch {epoch}/{total}",
+        )
+    except Exception as exc:  # pragma: no cover - network
+        print(f"  (metrics push failed: {exc})", flush=True)
 
 
 def evaluate_tokens(

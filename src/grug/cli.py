@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -379,6 +380,9 @@ def train_run(
             "--cs-weight", help="MOOSComp inter-class cosine loss weight. 0 reproduces LLMLingua-2."
         ),
     ] = 0.0,
+    push_to: Annotated[
+        str | None, typer.Option("--push-to", help="Hub repo to stream per-epoch metrics to.")
+    ] = None,
 ) -> None:
     """Fine-tune an encoder into a preserve/discard token classifier."""
     trainer = _training("trainer")
@@ -390,11 +394,64 @@ def train_run(
         max_length=max_length,
         device=device,
         cs_weight=cs_weight,
+        push_to=push_to,
     )
     metrics = trainer.train(data, out, config)
     _err(f"saved checkpoint to {out}")
     json.dump(metrics["history"][-1] if metrics["history"] else {}, sys.stdout, indent=2)
     sys.stdout.write("\n")
+
+
+@train_app.command("watch")
+def train_watch(
+    repo: Annotated[str, typer.Argument(help="Hub repo the run is streaming metrics to.")],
+    interval: Annotated[int, typer.Option("--interval", min=5, help="Seconds between polls.")] = 60,
+    once: Annotated[
+        bool, typer.Option("--once", help="Print the current metrics and exit.")
+    ] = False,
+) -> None:
+    """Follow a training run's per-epoch metrics from the Hub.
+
+    Remote training is otherwise a black box: the checkpoint only appears at the
+    end. The trainer uploads metrics.json each epoch, and this tails it.
+    """
+    import time
+
+    from huggingface_hub import hf_hub_download
+
+    seen = 0
+    while True:
+        try:
+            path = hf_hub_download(
+                repo_id=repo,
+                filename="metrics.json",
+                repo_type="model",
+                token=os.environ.get("HF_TOKEN"),
+                force_download=True,
+            )
+            metrics = json.loads(Path(path).read_text(encoding="utf-8"))
+        except Exception as exc:
+            _err(f"waiting for metrics ({type(exc).__name__})")
+            metrics = None
+
+        if metrics:
+            total = metrics.get("config", {}).get("epochs", "?")
+            for entry in metrics.get("history", [])[seen:]:
+                fields = "  ".join(
+                    f"{k}={v:.4f}" if isinstance(v, float) else f"{k}={v}"
+                    for k, v in entry.items()
+                    if k != "epoch"
+                )
+                _err(f"epoch {entry.get('epoch')}/{total}  {fields}")
+            seen = len(metrics.get("history", []))
+            if seen and seen >= (total if isinstance(total, int) else 0):
+                _err("training complete")
+                json.dump(metrics, sys.stdout, indent=2)
+                sys.stdout.write("\n")
+                raise typer.Exit(EXIT_OK)
+        if once:
+            raise typer.Exit(EXIT_OK)
+        time.sleep(interval)
 
 
 @train_app.command("evaluate")
