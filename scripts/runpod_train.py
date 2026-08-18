@@ -199,7 +199,9 @@ def _docker_args(script: str) -> str:
     passes through both layers untouched.
     """
     encoded = base64.b64encode(script.encode()).decode()
-    return f'bash -lc "echo {encoded} | base64 -d | bash"'
+    # Single quotes: the SDK interpolates this into a GraphQL string literal,
+    # so a double quote here would terminate it early. Base64 has neither.
+    return f"bash -lc 'echo {encoded} | base64 -d | bash'"
 
 
 def main() -> int:
