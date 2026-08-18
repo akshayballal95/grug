@@ -140,6 +140,7 @@ grug train run \
   --model @MODEL@ --epochs @EPOCHS@ \
   --batch-size @BATCH@ --lr @LR@ \
   --max-length @MAXLEN@ --cs-weight @CSW@ \
+  --push-to @HFREPO@ \
   --device cuda
 
 cat > /tmp/push.py <<'PUSH_EOF'
