@@ -93,10 +93,19 @@ def pick_gpu(runpod, args) -> list[dict]:
 
 _TERMINATE = """
 import json, os, urllib.request
-body = json.dumps({"query": 'mutation { podTerminate(input: {podId: "' + os.environ["RUNPOD_POD_ID"] + '"}) }'}).encode()
+
+# The API authenticates with a Bearer header; the ?api_key= form returns 403,
+# which would leave the pod billing after the run finished.
+pod_id = os.environ["RUNPOD_POD_ID"]
+query = 'mutation { podTerminate(input: {podId: "' + pod_id + '"}) }'
 req = urllib.request.Request(
-    "https://api.runpod.io/graphql?api_key=" + os.environ["RUNPOD_API_KEY"],
-    data=body, headers={"Content-Type": "application/json"})
+    "https://api.runpod.io/graphql",
+    data=json.dumps({"query": query}).encode(),
+    headers={
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + os.environ["RUNPOD_API_KEY"],
+    },
+)
 print(urllib.request.urlopen(req, timeout=30).read().decode()[:200])
 """
 
