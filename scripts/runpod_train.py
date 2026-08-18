@@ -22,7 +22,7 @@ import time
 REPO_URL = "https://github.com/akshayballal95/grug.git"
 #: Needs a torch new enough for the transformers major we install; a stale torch
 #: makes transformers report "PyTorch not found" even though it is installed.
-DEFAULT_IMAGE = "pytorch/pytorch:2.12.0-cuda12.6-cudnn9-devel"
+DEFAULT_IMAGE = "runpod/pytorch:1.1.0-rc.154-cu1290-torch280-ubuntu2204"
 #: ModernBERT-base at seq 512 needs well under this; more VRAM buys bigger batches.
 MIN_VRAM_GB = 16
 
@@ -164,6 +164,9 @@ LOG_EOF
 cleanup() {
   code=$?
   echo "GRUG_EXIT status=$code"
+  if [ $code -ne 0 ] && [ -n "${GRUG_HOLD:-}" ]; then
+    echo "holding $GRUG_HOLD s for inspection"; sleep "$GRUG_HOLD"
+  fi
   python /tmp/upload_log.py || true
   python /tmp/terminate.py || true
 }
@@ -314,6 +317,7 @@ def main() -> int:
                 env={
                     "HF_TOKEN": os.environ["HF_TOKEN"],
                     "RUNPOD_API_KEY": os.environ["RUNPOD_API_KEY"],
+                    "GRUG_HOLD": str(args.hold),
                 },
             )
             gpu = candidate
