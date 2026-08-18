@@ -112,26 +112,34 @@ CODE_EXTENSIONS = frozenset(
 #: code rather than indented prose.
 _CODE_STRONG_RE = re.compile(
     r"""
-      ^\s*(?:def|class|import|from|return|elif|while|try|except|finally|
+      ^\#!                                          # shebang
+    | ^\s*(?:def|class|import|from|return|elif|while|try|except|finally|
             lambda|async|await|yield|raise|assert|const|let|var|func|fn|pub|
             impl|struct|enum|interface|package|require|module|namespace|
-            template|typedef|extern|static|public|private)\b
+            template|typedef|extern|static|public|private|defn|defmacro|
+            fun|val|sub|end|done|fi|esac|then|do)\b
     | ^\s*(?:SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|FROM|WHERE|JOIN|
             GROUP|ORDER|HAVING|UNION|WITH)\b                # SQL
     | ^\s*(?:FROM|RUN|COPY|ADD|WORKDIR|ENTRYPOINT|CMD|ENV|EXPOSE|ARG|LABEL|
             VOLUME|USER|SHELL|HEALTHCHECK)\s+\S             # Dockerfile
-    | ^\s*[@#]!?\w                                 # decorator, shebang, comment
-    | [;{}]\s*$                                    # statement / block terminator
-    | ^\s*[\w.\[\]"']+\s*[-+*/|&^]?=[^=]          # assignment
-    | ^\s*[)\]}]                                   # closing bracket line
-    | =>|->|::|<-|\|\||&&|!==|===                   # operators prose does not use
-    | \w\(.*\)\s*[:{]?\s*$                        # a call or signature ending a line
+    | ^\s*[@]\w                                     # decorator
+    | ^\s*[{\[]                                     # object or array opener
+    | ^\s*\([a-z][\w./-]*[\s)]                       # s-expression, not a prose aside
+    | ^\s*[)\]}]                                    # closing bracket line
+    | ^\s*</?[A-Za-z][\w:-]*[\s/>]                   # markup tag
+    | ^[\w.$-]+:[ \t]*$                             # make target, label
+    | [;{}]\s*$                                     # statement terminator
+    | ;\s*(?:do|then)\s*$                           # shell block opener
+    | ^\s*[\w.\[\]"'$-]+(?:\s+[\w.\[\]"'$-]+)*\s*[-+*/|&^]?=[^=]   # assignment
+    | =>|->|::|<-|\|\||&&|!==|===                    # operators prose does not use
+    | \w\(.*\)\s*[:{]?\s*$                         # call or signature ending a line
     """,
     re.VERBOSE,
 )
 
-#: Weak evidence on its own -- indented prose in a list looks just like this.
-_CODE_WEAK_RE = re.compile(r"^\s{4,}\S")
+#: Weak on its own: two spaces or a tab is how most languages indent, but it is
+#: also how a markdown list continues, so this never convicts alone.
+_CODE_WEAK_RE = re.compile(r"^(?:[ ]{2,}|\t+)\S")
 
 
 def _code_line(line: str) -> bool:

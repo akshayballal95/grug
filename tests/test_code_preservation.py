@@ -107,3 +107,69 @@ def test_preserve_code_can_be_disabled():
 
     chunks = chunk_document(RAW_PY, preserve_code=False)
     assert not any(not c.compressible and c.text.strip() for c in chunks)
+
+
+# -- language coverage ------------------------------------------------------
+
+LANGUAGES = {
+    "python": "def total(items):\n    return sum(i.price for i in items)\n",
+    "javascript": "function total(items) {\n  return items.reduce((a, b) => a + b.price, 0);\n}\n",
+    "typescript": "export const total = (items: Item[]): number => {\n  return items.length;\n};\n",
+    "rust": "pub fn total(items: &[Item]) -> f64 {\n    items.iter().map(|i| i.price).sum()\n}\n",
+    "go": "func Total(items []Item) float64 {\n\tvar t float64\n\treturn t\n}\n",
+    "java": "public class Billing {\n    private int total(List<Item> items) {\n        return 0;\n    }\n}\n",
+    "c": '#include <stdio.h>\n\nint main(void) {\n    printf("hi");\n    return 0;\n}\n',
+    "cpp": "template <typename T>\nT total(const std::vector<T>& v) {\n    return T{};\n}\n",
+    "csharp": "public class Billing {\n    public int Total(List<Item> items) => items.Count;\n}\n",
+    "ruby": "def total(items)\n  items.sum { |i| i.price }\nend\n",
+    "php": "<?php\nfunction total(array $items): float {\n    return array_sum($items);\n}\n",
+    "swift": "func total(_ items: [Item]) -> Double {\n    return items.reduce(0) { $0 + $1.price }\n}\n",
+    "kotlin": "fun total(items: List<Item>): Double {\n    return items.sumOf { it.price }\n}\n",
+    "scala": "def total(items: Seq[Item]): Double =\n  items.map(_.price).sum\n",
+    "bash": '#!/bin/bash\nset -euo pipefail\nfor f in *.txt; do\n  echo "$f"\ndone\n',
+    "sql": "SELECT id FROM accounts\nWHERE region = 'us-east-1';\n",
+    "html": '<div class="card">\n  <p>Hello there</p>\n</div>\n',
+    "css": ".card {\n  color: #333;\n  margin: 0 auto;\n}\n",
+    "yaml": "name: grug\nversion: 0.1.0\ndeps:\n  - typer\n",
+    "json": '{\n  "name": "grug",\n  "version": "0.1.0"\n}\n',
+    "toml": '[project]\nname = "grug"\nrequires-python = ">=3.10"\n',
+    "haskell": "total :: [Item] -> Double\ntotal items = sum (map price items)\n",
+    "clojure": "(defn total [items]\n  (reduce + (map :price items)))\n",
+    "r": "total <- function(items) {\n  sum(items$price)\n}\n",
+    "lua": "function total(items)\n  return #items\nend\n",
+    "perl": "sub total {\n    my @items = @_;\n    return scalar @items;\n}\n",
+    "elixir": "def total(items) do\n  Enum.sum(items)\nend\n",
+    "dart": "double total(List<Item> items) {\n  return items.length.toDouble();\n}\n",
+    "terraform": 'resource "aws_s3_bucket" "b" {\n  bucket = "my-bucket"\n}\n',
+    "makefile": "build:\n\tpython -m build\n\ntest:\n\tpytest -q\n",
+}
+
+
+@pytest.mark.parametrize("language", sorted(LANGUAGES))
+def test_every_language_survives_verbatim(language):
+    """The property that matters: no language comes back rewritten."""
+    assert verbatim(LANGUAGES[language]), f"{language} was modified"
+
+
+@pytest.mark.parametrize("language", sorted(set(LANGUAGES) - {"yaml"}))
+def test_content_detection_covers_the_languages(language):
+    """YAML is excluded: 'name: grug' is genuinely prose-shaped, so only the
+    filename can identify it."""
+    assert looks_like_code(LANGUAGES[language])
+
+
+def test_yaml_needs_its_filename():
+    assert not looks_like_code(LANGUAGES["yaml"])
+    assert looks_like_code(LANGUAGES["yaml"], "config.yaml")
+
+
+def test_prose_aside_in_parentheses_is_not_an_s_expression():
+    """Regression: indented prose starting with '(' read as a Lisp form."""
+    text = (
+        "The verifier reports three things:\n"
+        "   - Number loss, where a figure vanishes.\n"
+        '     ("1,250" and "1250" count as one number.)\n'
+        "   - Entity loss, where a name vanishes.\n"
+        '     ("Bank of America" clipped to "Bank".)\n'
+    )
+    assert code_regions(text) == []
