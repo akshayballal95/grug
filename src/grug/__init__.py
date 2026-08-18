@@ -289,9 +289,7 @@ def compress(
     construction = dict(backend_kwargs or {})
     if isinstance(backend, CompressorBackend):
         if construction:
-            raise TypeError(
-                "backend_kwargs cannot be combined with an already-constructed backend"
-            )
+            raise TypeError("backend_kwargs cannot be combined with an already-constructed backend")
         instance = backend
     else:
         instance = _shared_backend(

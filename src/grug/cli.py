@@ -348,14 +348,42 @@ def train_prepare(
         int | None, typer.Option("--limit", help="Stop after N rows (smoke runs).")
     ] = None,
     val_fraction: Annotated[float, typer.Option("--val-fraction", min=0.0, max=0.5)] = 0.05,
+    from_hub: Annotated[
+        str | None,
+        typer.Option("--from-hub", help="Download cached labels instead of deriving them."),
+    ] = None,
+    push_to_hub: Annotated[
+        str | None,
+        typer.Option("--push-to-hub", help="Publish the derived labels as a dataset."),
+    ] = None,
 ) -> None:
-    """Download the distillation corpus and derive per-word keep/drop labels."""
+    """Get per-word keep/drop labels, from the cache or by deriving them.
+
+    Deriving costs about eight minutes of single-threaded alignment, which on a
+    rented GPU is eight minutes of paying for an idle card. ``--from-hub`` skips
+    it, and falls back to deriving if the cache is missing.
+    """
     data = _training("data")
+
+    if from_hub:
+        try:
+            summary = data.pull_prepared(from_hub, out)
+            _err(f"labels from cache {from_hub}: {summary['train']} train, {summary['val']} val")
+            json.dump(summary, sys.stdout, indent=2)
+            sys.stdout.write("\n")
+            raise typer.Exit(EXIT_OK)
+        except typer.Exit:
+            raise
+        except Exception as exc:
+            _err(f"cache {from_hub} unavailable ({type(exc).__name__}); deriving instead")
+
     summary = data.prepare(out, dataset=dataset, limit=limit, val_fraction=val_fraction)
     _err(
         f"{summary['pairs_kept']}/{summary['pairs_aligned']} pairs kept, "
         f"{summary['words']} words, keep rate {summary['keep_rate']:.2f} -> {out}"
     )
+    if push_to_hub:
+        _err(f"published: {data.push_prepared(out, push_to_hub)}")
     json.dump(summary, sys.stdout, indent=2)
     sys.stdout.write("\n")
 

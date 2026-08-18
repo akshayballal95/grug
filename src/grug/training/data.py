@@ -15,9 +15,23 @@ from typing import Any
 
 from .alignment import AlignmentStats, annotate, filter_examples
 
-__all__ = ["DEFAULT_DATASET", "Example", "prepare", "read_jsonl"]
+__all__ = [
+    "DEFAULT_DATASET",
+    "DEFAULT_LABEL_REPO",
+    "Example",
+    "prepare",
+    "pull_prepared",
+    "push_prepared",
+    "read_jsonl",
+]
 
 DEFAULT_DATASET = "microsoft/MeetingBank-LLMCompressed"
+
+#: Where derived labels are cached. Deriving them costs ~8 minutes of CPU, which
+#: on a rented GPU is 8 minutes of paying for an idle card.
+DEFAULT_LABEL_REPO = "akshayballal/grug-meetingbank-labels"
+
+_SHARDS = ("train.jsonl", "val.jsonl", "summary.json")
 
 #: Chunk-level columns. The whole-document columns exist too, but the teacher
 #: compressed chunk by chunk, so these pair up far more reliably.
@@ -147,3 +161,42 @@ def read_jsonl(path: str | Path) -> list[Example]:
                 payload = json.loads(line)
                 examples.append(Example(payload["words"], payload["labels"]))
     return examples
+
+
+def push_prepared(data_dir: str | Path, repo: str, *, private: bool = False) -> str:
+    """Publish derived labels so other runs can skip the alignment stage."""
+    import os
+
+    from huggingface_hub import HfApi
+
+    api = HfApi(token=os.environ.get("HF_TOKEN"))
+    api.create_repo(repo, repo_type="dataset", private=private, exist_ok=True)
+    for name in _SHARDS:
+        path = Path(data_dir) / name
+        if path.exists():
+            api.upload_file(
+                path_or_fileobj=str(path),
+                path_in_repo=name,
+                repo_id=repo,
+                repo_type="dataset",
+            )
+    return f"https://huggingface.co/datasets/{repo}"
+
+
+def pull_prepared(repo: str, out_dir: str | Path) -> dict[str, Any]:
+    """Fetch labels published by :func:`push_prepared`.
+
+    Returns the summary of what was downloaded, or raises if the cache is
+    missing so the caller can fall back to deriving them.
+    """
+    import os
+
+    from huggingface_hub import hf_hub_download
+
+    directory = Path(out_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+    token = os.environ.get("HF_TOKEN")
+    for name in _SHARDS:
+        local = hf_hub_download(repo_id=repo, filename=name, repo_type="dataset", token=token)
+        (directory / name).write_bytes(Path(local).read_bytes())
+    return json.loads((directory / "summary.json").read_text(encoding="utf-8"))

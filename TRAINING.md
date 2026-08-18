@@ -57,6 +57,22 @@ alignment is faithful.
 > The corpus is **CC-BY-NC-SA-4.0**. A model trained on it inherits a
 > non-commercial constraint. Check this before shipping a checkpoint.
 
+### Skipping stage 1
+
+Deriving labels costs ~8 minutes of single-threaded alignment. On a rented GPU
+that is 8 minutes of paying for an idle card, so the derived labels are cached:
+
+```bash
+grug train prepare --out data/ --from-hub akshayballal/grug-meetingbank-labels
+```
+
+That takes about 4 seconds, and falls back to deriving if the cache is missing
+or you point it at a corpus of your own. To publish your own:
+
+```bash
+grug train prepare --out data/ --push-to-hub you/your-labels
+```
+
 ## Stage 2 — `run`
 
 Fine-tunes an encoder into a binary preserve/discard token classifier:

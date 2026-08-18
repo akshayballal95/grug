@@ -35,6 +35,11 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--branch", default="main", help="Git branch the pod should clone")
     p.add_argument("--model", default="answerdotai/ModernBERT-base")
+    p.add_argument(
+        "--labels",
+        default="akshayballal/grug-meetingbank-labels",
+        help="Cached label dataset; the pod falls back to deriving if it is missing.",
+    )
     p.add_argument("--epochs", type=int, default=10)
     p.add_argument("--batch-size", type=int, default=32)
     p.add_argument("--lr", type=float, default=1e-5)
@@ -164,7 +169,7 @@ fi
 cd /workspace/grug
 
 if [ ! -f /workspace/data/train.jsonl ]; then
-  grug train prepare --out /workspace/data
+  grug train prepare --out /workspace/data --from-hub @LABELREPO@
 fi
 
 grug train run \
@@ -223,6 +228,7 @@ def bootstrap(args) -> str:
         "@MAXLEN@": str(args.max_length),
         "@CSW@": str(args.cs_weight),
         "@HFREPO@": args.repo,
+        "@LABELREPO@": args.labels,
         "@PRIVATE@": str(bool(args.private)),
     }
     script = _BOOTSTRAP
