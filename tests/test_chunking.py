@@ -358,8 +358,16 @@ def test_number_protection_can_be_switched_off():
 @pytest.mark.parametrize(
     "identifier",
     [
-        "node-07", "us-east-1", "v2.1.0-rc3", "RFC-7231", "utf-8", "sha256:9f2b",
-        "log4j-2.17.1", "TRAINING.md", "notes.grug.md", "Node.js",
+        "node-07",
+        "us-east-1",
+        "v2.1.0-rc3",
+        "RFC-7231",
+        "utf-8",
+        "sha256:9f2b",
+        "log4j-2.17.1",
+        "TRAINING.md",
+        "notes.grug.md",
+        "Node.js",
     ],
 )
 def test_identifiers_are_protected(identifier):

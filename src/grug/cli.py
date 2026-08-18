@@ -26,7 +26,7 @@ import typer
 
 from . import __version__
 from .base import CompressionResult, MissingDependencyError, tokenizer_name
-from .chunking import DEFAULT_CHUNK_TOKENS
+from .chunking import DEFAULT_CHUNK_TOKENS, looks_like_code
 from .registry import (
     BackendNotFoundError,
     backend_info,
@@ -150,8 +150,19 @@ def compress(
         int, typer.Option("--chunk-tokens", min=16, help="Max tokens per chunk.")
     ] = DEFAULT_CHUNK_TOKENS,
     quiet: Annotated[bool, typer.Option("--quiet", "-q", help="Suppress the stats line.")] = False,
+    skip_code: Annotated[
+        bool,
+        typer.Option(
+            "--skip-code/--compress-code",
+            help="Pass source files through unchanged rather than compressing them.",
+        ),
+    ] = True,
 ) -> None:
-    """Compress one or more documents."""
+    """Compress one or more documents.
+
+    Source files are passed through unchanged, because compressing code
+    rewrites the program. ``--compress-code`` overrides that.
+    """
     if output is not None and output != STDIO and len(files) > 1:
         _err("error: -o/--output takes a single input file; omit it to write <name>.grug.<ext>")
         raise typer.Exit(EXIT_ERROR)
@@ -173,6 +184,18 @@ def compress(
         except (OSError, UnicodeDecodeError) as exc:
             _err(f"error: {exc}")
             had_error = True
+            continue
+
+        # The filename is the strongest signal available: a .sql file or a
+        # docstring-heavy .py does not read as code by content alone, and
+        # compressing either rewrites the program itself.
+        if skip_code and looks_like_code(text, None if source == STDIO else source):
+            _err(f"{source}: source code, passed through unchanged")
+            try:
+                _write_output(text, source, output)
+            except OSError as exc:
+                _err(f"error: {exc}")
+                had_error = True
             continue
 
         started = time.perf_counter()

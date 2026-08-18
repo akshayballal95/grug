@@ -280,7 +280,7 @@ def test_version_case_is_still_normalised():
 
 
 def test_a_negation_does_not_scope_across_a_sentence_boundary():
-    """"No." is a complete answer; the next sentence's subject is not its scope."""
+    """ "No." is a complete answer; the next sentence's subject is not its scope."""
     original = "Is it ready? No. The migration proceeds tonight."
     compressed = "ready? No. proceeds tonight."
     assert verify(original, compressed) == []

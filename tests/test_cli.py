@@ -382,3 +382,32 @@ def test_the_short_question_flag_works(cli_command, doc):
 def test_no_question_produces_no_question_warning(cli_command, doc):
     out = run(cli_command, "compress", str(doc), *RULES)
     assert "question ignored" not in out.stderr
+
+
+def test_source_files_pass_through_unchanged(cli_command, tmp_path):
+    """Compressing code rewrites the program, so grug refuses by default."""
+    src = tmp_path / "calc.py"
+    src.write_text("import os\n\n\ndef total(items):\n    return sum(i.price for i in items)\n")
+    result = run(cli_command, "compress", str(src), *RULES, "--rate", "0.3")
+    assert result.returncode == OK
+    assert "passed through unchanged" in result.stderr
+    assert (tmp_path / "calc.grug.py").read_text() == src.read_text()
+
+
+def test_compress_code_overrides_the_guard(cli_command, tmp_path):
+    src = tmp_path / "calc.py"
+    src.write_text("import os\n\n\ndef total(items):\n    return sum(i.price for i in items)\n")
+    result = run(cli_command, "compress", str(src), *RULES, "--rate", "0.3", "--compress-code")
+    assert result.returncode == OK
+    assert "passed through unchanged" not in result.stderr
+
+
+def test_prose_is_still_compressed_alongside_code(cli_command, tmp_path):
+    code = tmp_path / "a.py"
+    prose = tmp_path / "b.md"
+    code.write_text("def f(x):\n    return x\n")
+    prose.write_text("It is important to note that the build did not pass on 3 of 12 runs.\n")
+    result = run(cli_command, "compress", str(code), str(prose), *RULES, "--rate", "0.4")
+    assert result.returncode == OK
+    assert (tmp_path / "a.grug.py").read_text() == code.read_text()
+    assert len((tmp_path / "b.grug.md").read_text()) < len(prose.read_text())

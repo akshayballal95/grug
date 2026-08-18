@@ -10,6 +10,7 @@ from __future__ import annotations
 import functools
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from .base import CompressionResult, CompressorBackend, count_tokens
@@ -18,6 +19,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
 __all__ = [
+    "CODE_EXTENSIONS",
     "COMPOUND_NUMBER_RE",
     "DEFAULT_CHUNK_TOKENS",
     "FENCE_RE",
@@ -27,7 +29,9 @@ __all__ = [
     "URL_RE",
     "Chunk",
     "chunk_document",
+    "code_regions",
     "compress_document",
+    "looks_like_code",
     "protect_spans",
     "rejoin",
     "restore_spans",
@@ -51,6 +55,91 @@ URL_RE = re.compile(r"(?:https?://|www\.)[^\s<>()\[\]]+|\S+@\S+\.\S+")
 #: Block types re-emitted byte-for-byte. Compressing a table's cells destroys
 #: its alignment and the column-to-value mapping.
 VERBATIM_CODE_TOKENS = frozenset({"fence", "code_block", "html_block"})
+
+#: Extensions whose contents are source, not prose. Compressing these produces
+#: syntactically invalid output, so grug passes them through untouched.
+CODE_EXTENSIONS = frozenset(
+    {
+        ".py",
+        ".pyi",
+        ".js",
+        ".jsx",
+        ".ts",
+        ".tsx",
+        ".rs",
+        ".go",
+        ".java",
+        ".kt",
+        ".c",
+        ".h",
+        ".cc",
+        ".cpp",
+        ".hpp",
+        ".cs",
+        ".rb",
+        ".php",
+        ".swift",
+        ".scala",
+        ".sh",
+        ".bash",
+        ".zsh",
+        ".fish",
+        ".ps1",
+        ".sql",
+        ".r",
+        ".jl",
+        ".lua",
+        ".pl",
+        ".json",
+        ".yaml",
+        ".yml",
+        ".toml",
+        ".ini",
+        ".cfg",
+        ".xml",
+        ".proto",
+        ".tf",
+        ".dockerfile",
+        ".makefile",
+        ".gradle",
+        ".cmake",
+        ".vim",
+        ".el",
+    }
+)
+
+#: Lines that only code writes. One of these anywhere in a run is what makes it
+#: code rather than indented prose.
+_CODE_STRONG_RE = re.compile(
+    r"""
+      ^\s*(?:def|class|import|from|return|elif|while|try|except|finally|
+            lambda|async|await|yield|raise|assert|const|let|var|func|fn|pub|
+            impl|struct|enum|interface|package|require|module|namespace|
+            template|typedef|extern|static|public|private)\b
+    | ^\s*(?:SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|FROM|WHERE|JOIN|
+            GROUP|ORDER|HAVING|UNION|WITH)\b                # SQL
+    | ^\s*(?:FROM|RUN|COPY|ADD|WORKDIR|ENTRYPOINT|CMD|ENV|EXPOSE|ARG|LABEL|
+            VOLUME|USER|SHELL|HEALTHCHECK)\s+\S             # Dockerfile
+    | ^\s*[@#]!?\w                                 # decorator, shebang, comment
+    | [;{}]\s*$                                    # statement / block terminator
+    | ^\s*[\w.\[\]"']+\s*[-+*/|&^]?=[^=]          # assignment
+    | ^\s*[)\]}]                                   # closing bracket line
+    | =>|->|::|<-|\|\||&&|!==|===                   # operators prose does not use
+    | \w\(.*\)\s*[:{]?\s*$                        # a call or signature ending a line
+    """,
+    re.VERBOSE,
+)
+
+#: Weak evidence on its own -- indented prose in a list looks just like this.
+_CODE_WEAK_RE = re.compile(r"^\s{4,}\S")
+
+
+def _code_line(line: str) -> bool:
+    return bool(_CODE_STRONG_RE.search(line) or _CODE_WEAK_RE.search(line))
+
+
+#: How many consecutive code-looking lines make a block worth protecting.
+CODE_RUN_LINES = 2
 VERBATIM_MARKDOWN_TOKENS = frozenset({"table_open"})
 
 #: Line-leading markdown structure. Protected so the marker returns verbatim
@@ -326,8 +415,12 @@ def chunk_document(
     if preserve_numbers:
         spans.append(COMPOUND_NUMBER_RE)
 
+    ranges = _verbatim_ranges(text, token_types)
+    if preserve_code:
+        ranges = _merge_ranges(ranges + code_regions(text))
+
     chunks: list[Chunk] = []
-    for segment, is_verbatim in _segments_from_ranges(text, _verbatim_ranges(text, token_types)):
+    for segment, is_verbatim in _segments_from_ranges(text, ranges):
         if is_verbatim:
             chunks.append(Chunk(text=segment, sep="", compressible=False))
             continue
@@ -346,6 +439,66 @@ def _parser() -> Any:
 
 def _line_starts(text: str) -> list[int]:
     return [0, *(m.end() for m in _NEWLINE_RE.finditer(text))]
+
+
+def looks_like_code(text: str, filename: str | None = None) -> bool:
+    """Whether ``text`` is source code rather than prose.
+
+    The extension decides when there is one -- it is the strongest signal we
+    get. Otherwise this counts code-shaped lines, and deliberately leans
+    towards saying yes: treating prose as code costs some compression, while
+    treating code as prose corrupts it.
+    """
+    if filename:
+        suffix = Path(filename).suffix.lower()
+        if suffix in CODE_EXTENSIONS:
+            return True
+        name = Path(filename).name.lower()
+        if name in {"makefile", "dockerfile", "rakefile", "justfile"}:
+            return True
+
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    if not lines:
+        return False
+    if lines[0].startswith("#!"):
+        return True
+    # Strong signals only: a document of indented prose is not source.
+    coded = sum(1 for ln in lines if _CODE_STRONG_RE.search(ln))
+    return coded / len(lines) >= 0.5
+
+
+def code_regions(text: str, min_lines: int = CODE_RUN_LINES) -> list[tuple[int, int]]:
+    """Character ranges of unfenced code embedded in prose.
+
+    Markdown fences and indented blocks are found by the parser; this catches
+    the case the parser cannot see, where source sits in plain text with no
+    marker around it. Only runs of ``min_lines`` consecutive code-shaped lines
+    qualify, so an occasional prose line ending in a brace is not enough.
+    """
+    starts = _line_starts(text)
+    lines = text.splitlines()
+    flags = [bool(ln.strip()) and _code_line(ln) for ln in lines]
+    strong = [bool(ln.strip()) and bool(_CODE_STRONG_RE.search(ln)) for ln in lines]
+
+    ranges: list[tuple[int, int]] = []
+    index = 0
+    while index < len(flags):
+        if not flags[index]:
+            index += 1
+            continue
+        end = index
+        while end + 1 < len(flags) and (flags[end + 1] or not lines[end + 1].strip()):
+            end += 1
+        while end > index and not lines[end].strip():
+            end -= 1
+        # Indentation alone is not enough: a run must contain something only
+        # code writes, or an indented paragraph in a list looks like a block.
+        if end - index + 1 >= min_lines and any(strong[index : end + 1]):
+            begin = starts[index]
+            stop = starts[end] + len(lines[end])
+            ranges.append((begin, stop))
+        index = end + 1
+    return ranges
 
 
 def _verbatim_ranges(text: str, token_types: frozenset[str]) -> list[tuple[int, int]]:
@@ -378,6 +531,17 @@ def _verbatim_ranges(text: str, token_types: frozenset[str]) -> list[tuple[int, 
     ranges.sort()
     merged: list[tuple[int, int]] = []
     for begin, end in ranges:
+        if merged and begin <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((begin, end))
+    return merged
+
+
+def _merge_ranges(ranges: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """Sort and coalesce overlapping character ranges."""
+    merged: list[tuple[int, int]] = []
+    for begin, end in sorted(ranges):
         if merged and begin <= merged[-1][1]:
             merged[-1] = (merged[-1][0], max(merged[-1][1], end))
         else:

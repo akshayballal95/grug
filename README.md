@@ -125,6 +125,8 @@ pattern-matched, so structure survives compression intact:
 | Element | Treatment |
 | --- | --- |
 | Fenced and indented code | Bypasses the compressor; re-emitted byte-for-byte |
+| Unfenced code in prose | Detected by shape and bypassed — a run of code-looking lines with at least one construct only code writes |
+| Whole source files | Passed through unchanged; the filename decides (`.py`, `.sql`, `Dockerfile`, …). `--compress-code` overrides |
 | Tables | Bypassed whole — a table is already dense, and compressing cells destroys the column-to-value mapping |
 | Headings, list bullets, blockquote markers, rules | Marker preserved verbatim, the text after it compresses |
 | Blank lines | Hard chunk boundaries, so no backend can collapse a paragraph break |
