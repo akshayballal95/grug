@@ -13,6 +13,7 @@ costs minutes, not the rest of the day. Nothing is created without ``--go``.
 from __future__ import annotations
 
 import argparse
+import base64
 import os
 import sys
 import textwrap
@@ -32,7 +33,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--repo", required=True, help="Hugging Face repo id to push to, e.g. you/grug-modernbert"
     )
-    p.add_argument("--branch", default="feat/train", help="Git branch the pod should clone")
+    p.add_argument("--branch", default="main", help="Git branch the pod should clone")
     p.add_argument("--model", default="answerdotai/ModernBERT-base")
     p.add_argument("--epochs", type=int, default=10)
     p.add_argument("--batch-size", type=int, default=32)
@@ -190,6 +191,17 @@ def bootstrap(args) -> str:
     return script.strip()
 
 
+def _docker_args(script: str) -> str:
+    """Wrap the bootstrap so it survives GraphQL and shell quoting.
+
+    The script is passed to RunPod inside a GraphQL string; backslashes and
+    quotes in it are not valid GraphQL escapes. Base64 is alphanumeric, so it
+    passes through both layers untouched.
+    """
+    encoded = base64.b64encode(script.encode()).decode()
+    return f'bash -lc "echo {encoded} | base64 -d | bash"'
+
+
 def main() -> int:
     args = parse_args()
     for key in ("RUNPOD_API_KEY", "HF_TOKEN"):
@@ -224,7 +236,7 @@ def main() -> int:
         container_disk_in_gb=40,
         volume_in_gb=0,
         min_memory_in_gb=16,
-        docker_args=f"bash -lc {bootstrap(args)!r}",
+        docker_args=_docker_args(bootstrap(args)),
         env={"HF_TOKEN": os.environ["HF_TOKEN"], "RUNPOD_API_KEY": os.environ["RUNPOD_API_KEY"]},
     )
     pod_id = pod["id"]
