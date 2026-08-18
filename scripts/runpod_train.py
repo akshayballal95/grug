@@ -77,7 +77,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--start-timeout",
         type=float,
-        default=10.0,
+        default=20.0,
         help="Give up if the container has not started within this many minutes.",
     )
     p.add_argument(
