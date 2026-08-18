@@ -20,8 +20,9 @@ import textwrap
 import time
 
 REPO_URL = "https://github.com/akshayballal95/grug.git"
-#: Any CUDA image with python and git. Override with --image if this tag ages out.
-DEFAULT_IMAGE = "runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04"
+#: Needs a torch new enough for the transformers major we install; a stale torch
+#: makes transformers report "PyTorch not found" even though it is installed.
+DEFAULT_IMAGE = "pytorch/pytorch:2.12.0-cuda12.6-cudnn9-devel"
 #: ModernBERT-base at seq 512 needs well under this; more VRAM buys bigger batches.
 MIN_VRAM_GB = 16
 
@@ -167,6 +168,17 @@ if [ ! -f /workspace/.installed ]; then
   touch /workspace/.installed
 fi
 cd /workspace/grug
+
+# Fail in a minute, not after the eight-minute prepare. Importing the model
+# class is what trips a torch/transformers mismatch.
+python - <<'PREFLIGHT_EOF'
+import torch, transformers
+from transformers import AutoModelForTokenClassification  # noqa: F401
+
+print("PREFLIGHT torch", torch.__version__, "transformers", transformers.__version__)
+assert torch.cuda.is_available(), "CUDA is not available in this container"
+print("PREFLIGHT gpu", torch.cuda.get_device_name(0))
+PREFLIGHT_EOF
 
 if [ ! -f /workspace/data/train.jsonl ]; then
   grug train prepare --out /workspace/data --from-hub @LABELREPO@
