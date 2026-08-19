@@ -1,8 +1,9 @@
 <div align="center">
 
-# grug
-
-**grug make text small. grug keep meaning.**
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/grug-banner-dark.svg">
+  <img alt="grug. grug make text small. grug keep meaning." src="docs/assets/grug-banner-light.svg" width="540">
+</picture>
 
 Shrink anything you feed an LLM. Keep the words that change the answer.
 

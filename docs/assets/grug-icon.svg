@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="grug: a knapped stone whose carved text lines get shorter">
+  <path d="M 52 10 L 82 12 Q 89 13 93 19 L 108 38 L 101 46 L 112 56 Q 115 61 114 66 L 107 94 Q 106 100 101 104 L 78 118 Q 73 121 67 120 L 37 114 Q 31 113 28 108 L 13 82 Q 10 77 11 71 L 18 38 Q 19 31 25 27 L 45 12 Q 48 10 52 10 Z" fill="#B0532C"/>
+  <g transform="rotate(-2 64 64)">
+    <rect x="35" y="42" width="56" height="11" rx="5.5" fill="#FFF3E2"/>
+    <rect x="35" y="61" width="40" height="11" rx="5.5" fill="#FFF3E2"/>
+    <rect x="35" y="80" width="24" height="11" rx="5.5" fill="#FFF3E2"/>
+  </g>
+</svg>
