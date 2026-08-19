@@ -7,7 +7,7 @@
 
 Shrink anything you feed an LLM. Keep the words that change the answer.
 
-[![PyPI](https://img.shields.io/pypi/v/grugify)](https://pypi.org/project/grugify/)
+[![PyPI](https://img.shields.io/pypi/v/grugify?cacheSeconds=300)](https://pypi.org/project/grugify/)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://github.com/akshayballal95/grug)
 [![CI](https://github.com/akshayballal95/grug/actions/workflows/ci.yml/badge.svg)](https://github.com/akshayballal95/grug/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/akshayballal95/grug/blob/main/LICENSE)
