@@ -105,6 +105,21 @@
       "warnings_per_doc": 0.975,
       "negation_loss_rate": 0.0,
       "metadata": {}
+    },
+    {
+      "backend": "cascade",
+      "rate": 0.45,
+      "ratio": 0.5044134375854968,
+      "original_tokens": 694470,
+      "compressed_tokens": 350300,
+      "exact_match": 0.6216666666666667,
+      "f1": 0.748495207652342,
+      "questions": 600,
+      "compress_seconds": 145.14932416699594,
+      "answer_seconds": 60.61097166698892,
+      "warnings_per_doc": 1.355,
+      "negation_loss_rate": 0.0,
+      "metadata": {}
     }
   ]
 }

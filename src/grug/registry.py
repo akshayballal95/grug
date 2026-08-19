@@ -29,7 +29,9 @@ ENTRY_POINT_GROUP = "grug.backends"
 #: Preference order when the caller does not name a backend. ``classifier`` is
 #: deliberately absent: it cannot be constructed without a checkpoint, so the
 #: zero-configuration default is always ``rules``.
-_PREFERRED_ORDER = ("rules",)
+#: Listing order for the built-ins. Spelled out rather than left to sort
+#: order, which put "classifier" first only because "cascade" did not exist.
+_PREFERRED_ORDER = ("rules", "classifier", "cascade")
 
 _REGISTRY: dict[str, type[CompressorBackend]] = {}
 _builtins_loaded = False

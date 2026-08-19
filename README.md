@@ -82,15 +82,24 @@ negations on the same run, neither grug backend lost a single one:
 | --- | ---: | ---: | ---: | ---: |
 | original (no compression) | 100% | 0.62 | 0.75 | n/a |
 | **grug rules** | 62% | **0.61** | **0.76** | **0%** |
+| **grug cascade** | 50% | **0.62** | 0.75 | **0%** |
 | **grug classifier** (mbert-control) | 37% | 0.58 | 0.70 | **0%** |
 | LLMLingua-2 | 30% | 0.56 | 0.69 | 43% |
 
-Two things stand out. Compressing with `grug rules` scored *higher F1* than
+Three things stand out. Compressing with `grug rules` scored *higher F1* than
 sending the full document, on 62% of the tokens -- which sounds wrong until you
 remember that what it deletes is noise. Exact match is a hair lower, 0.61
-against 0.62, so it is a wash there rather than a win. And the classifier
-reaches a third of the tokens at slightly better answer quality than
-LLMLingua-2, losing no negations where LLMLingua-2 loses 43%.
+against 0.62, so it is a wash there rather than a win.
+
+`grug cascade` halves the document and answers exactly as well as not
+compressing it at all: 0.62 exact match against 0.62, F1 0.75 against 0.75. It
+runs the rules engine first and gives the classifier a document that has
+already lost its padding, so the budget is spent choosing between words that
+carry something.
+
+And the classifier alone reaches a third of the tokens at slightly better
+answer quality than LLMLingua-2, losing no negations where LLMLingua-2 loses
+43%.
 
 Reproduce it with `grug benchmark qa`. Raw results are in
 [`benchmarks/`](https://github.com/akshayballal95/grug/tree/main/benchmarks/sonnet46/).
@@ -130,14 +139,15 @@ result = grug.compress(
 )
 ```
 
-## Two backends
+## Three backends
 
 | Backend | Install | Method | Rates it reaches | Speed |
 | --- | --- | --- | --- | --- |
 | `rules` | included | Deletes words its rule set nominates; the engine vetoes everything load-bearing | floors out around 0.6, when it runs out of safe words to drop | milliseconds |
 | `classifier` | `grugify[classifier]` | A fine-tuned encoder scores every word and the top-`rate` fraction survives, in order | 0.2 to 0.5 | about 0.2s per 400-token chunk on CPU, after a one-off model load |
+| `cascade` | `grugify[classifier]` | `rules` first, then the classifier ranks what survived | 0.2 to 0.6, and the best answers per token of the three | the two added together |
 
-Both are extractive: the output is a subsequence of the input, so neither can
+All three are extractive: the output is a subsequence of the input, so none can
 invent a fact. `rate` means the same thing everywhere, the fraction of tokens to
 *keep*. A backend that cannot hit it exactly reports what it actually achieved in
 `result.ratio`.

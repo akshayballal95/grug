@@ -28,6 +28,7 @@ FONT = "system-ui, -apple-system, 'Segoe UI', sans-serif"
 #: best of them on both QA metrics.
 ENTITIES = {
     "rules": ("grug rules", 0),
+    "cascade": ("grug cascade", 2),
     "mbert-control": ("grug classifier", 1),
 }
 
@@ -147,7 +148,7 @@ def quality_chart(rows: dict[str, dict], theme: dict) -> str:
     )
 
     # (dx, dy) offsets keep the labels clear of each other and the marks.
-    offsets = {"rules": (11, -16), "mbert-control": (11, 24)}
+    offsets = {"rules": (11, -18), "cascade": (-10, 17), "mbert-control": (11, 20)}
     for key, (label, slot) in ENTITIES.items():
         row = rows[key]
         x, y = px(row["ratio"] * 100), py(row["f1"])
@@ -157,7 +158,10 @@ def quality_chart(rows: dict[str, dict], theme: dict) -> str:
             f'<circle cx="{x:.1f}" cy="{y:.1f}" r="7" fill="{color}" '
             f'stroke="{theme["surface"]}" stroke-width="2"/>'
         )
-        parts.append(text(x + dx, y + dy, label, 12.5, theme["ink"], font_weight="600"))
+        anchor = "end" if dx < 0 else "start"
+        parts.append(
+            text(x + dx, y + dy, label, 12.5, theme["ink"], font_weight="600", text_anchor=anchor)
+        )
         parts.append(
             text(
                 x + dx,
@@ -165,6 +169,7 @@ def quality_chart(rows: dict[str, dict], theme: dict) -> str:
                 f"F1 {row['f1']:.2f} · {row['ratio'] * 100:.0f}% tokens",
                 11,
                 theme["secondary"],
+                text_anchor=anchor,
             )
         )
     parts.append(text(left + 4, ref_y - 8, "uncompressed quality", 10.5, theme["muted"]))
@@ -174,6 +179,7 @@ def quality_chart(rows: dict[str, dict], theme: dict) -> str:
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" '
         f'font-family="{FONT}" role="img" aria-label="Answer quality versus tokens sent: '
         f"grug rules beats the uncompressed baseline with 62% of the tokens; the grug "
+        f"cascade matches the uncompressed document on half the tokens; the "
         f'classifier keeps F1 0.70 with 37%.">\n{body}\n</svg>\n'
     )
 
@@ -185,7 +191,7 @@ def negation_chart(rows: dict[str, dict], theme: dict) -> str:
     bar_h, gap = 22, 16
 
     x_max = 50.0  # percent
-    order = ["mbert-control", "rules"]
+    order = ["mbert-control", "cascade", "rules"]
 
     def bx(value: float) -> float:
         return left + value / x_max * plot_w
