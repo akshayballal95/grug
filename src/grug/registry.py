@@ -146,6 +146,7 @@ def backend_info() -> list[dict[str, Any]]:
                 "available": _safe_is_available(cls),
                 "extra": getattr(cls, "extra", None),
                 "generative": getattr(cls, "generative", False),
+                "requires_configuration": getattr(cls, "requires_configuration", False),
                 "description": (getattr(cls, "description", "") or "").strip(),
             }
         )
@@ -183,6 +184,7 @@ def default_backend_name(*, question: bool = False) -> str:
         if cls is not None and _safe_is_available(cls):
             return name
     for name in list_backends():
-        if _safe_is_available(_REGISTRY[name]):
+        cls = _REGISTRY[name]
+        if _safe_is_available(cls) and not getattr(cls, "requires_configuration", False):
             return name
     return "rules"

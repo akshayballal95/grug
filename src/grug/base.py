@@ -148,6 +148,12 @@ class CompressorBackend(ABC):
     #: keys on this, so it stays ``False`` unless a backend really uses it.
     question_aware: bool = False
 
+    #: ``True`` when the backend cannot be constructed without arguments -- it
+    #: has no sensible default model. ``is_available`` still reports whether the
+    #: dependencies are installed; this says whether it is usable *unconfigured*,
+    #: which is what automatic selection and "try every backend" loops need.
+    requires_configuration: bool = False
+
     @abstractmethod
     def compress(self, text: str, rate: float = 0.5, **kwargs: Any) -> CompressionResult:
         """Compress ``text`` keeping roughly ``rate`` of its tokens.

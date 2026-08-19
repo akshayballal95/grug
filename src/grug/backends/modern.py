@@ -65,6 +65,9 @@ class ModernBackend(CompressorBackend):
     description = "Token classification, any modern encoder. Needs torch and --model."
     extra = "modern"
     generative = False
+    # No DEFAULT_MODEL: a base encoder's untrained head scores at random, so
+    # there is nothing honest to fall back to. Callers must name a checkpoint.
+    requires_configuration = True
 
     def __init__(
         self,

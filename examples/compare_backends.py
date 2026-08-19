@@ -52,9 +52,12 @@ def main() -> int:
 
     rule("Backends")
     for row in grug.backend_info():
-        status = (
-            "available" if row["available"] else f"missing -> pip install 'grug[{row['extra']}]'"
-        )
+        if not row["available"]:
+            status = f"missing -> pip install 'grug[{row['extra']}]'"
+        elif row["requires_configuration"]:
+            status = "available, needs --model"
+        else:
+            status = "available"
         print(f"  {row['name']:<10} {status}")
     print(f"\n  Document: {original} tokens, tokenizer={grug.tokenizer_name()}")
 
@@ -64,8 +67,13 @@ def main() -> int:
     print("  " + "-" * (len(header) - 2))
 
     for name in grug.list_backends():
+        if getattr(grug.get_backend_class(name), "requires_configuration", False):
+            print(f"  {name:<10} {'-':>5} {'-':>8} {'-':>7} {'-':>7}  needs an explicit model")
+            continue
         if grug.get_backend_class(name).question_aware and not args.with_question:
-            print(f"  {name:<10} {'-':>5} {'-':>8} {'-':>7} {'-':>7}  skipped, pass --with-question")
+            print(
+                f"  {name:<10} {'-':>5} {'-':>8} {'-':>7} {'-':>7}  skipped, pass --with-question"
+            )
             continue
         comp = build(name, args.device)
         if comp is None:

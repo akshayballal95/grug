@@ -248,3 +248,25 @@ def test_list_valued_construction_kwargs_are_accepted():
     finally:
         unregister_backend("kwargs-probe")
         grug._BACKEND_CACHE.clear()
+
+
+def test_backends_needing_configuration_are_not_chosen_automatically():
+    """`available` means deps installed, not usable with no arguments.
+
+    ModernBackend has no default checkpoint, so picking it automatically hands
+    the caller a TypeError instead of a compressor.
+    """
+    import grug
+    from grug.registry import default_backend_name
+
+    configurable = {row["name"] for row in grug.backend_info() if row.get("requires_configuration")}
+    assert "modern" in configurable
+    assert default_backend_name() not in configurable
+
+
+def test_backend_info_reports_configuration_requirement():
+    import grug
+
+    rows = {row["name"]: row for row in grug.backend_info()}
+    assert rows["modern"]["requires_configuration"] is True
+    assert rows["rules"]["requires_configuration"] is False

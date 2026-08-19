@@ -193,3 +193,25 @@ def test_retention_is_none_without_anything_to_retain():
 
     assert _retention("plain text here", "plain text", "negation") is None
     assert _retention("plain text here", "plain text", "number") is None
+
+
+def test_strip_envelope_removes_titles_and_fences_only():
+    from grug.training.distill import strip_envelope
+
+    assert strip_envelope("# Compressed Text\n\nthe body") == "the body"
+    assert strip_envelope("Here is the compressed text:\nthe body") == "the body"
+    assert strip_envelope("```\nthe body\n```") == "the body"
+    assert strip_envelope("the body") == "the body"
+    assert strip_envelope("") == ""
+    assert strip_envelope(None) is None
+
+
+def test_strip_envelope_keeps_a_heading_that_is_real_content():
+    """A passage whose compression legitimately starts with a hash needs care."""
+    from grug.training.distill import strip_envelope
+
+    # A lone '#' line followed by more text is indistinguishable from a title,
+    # so we accept losing it; what must survive is body text on the first line.
+    assert strip_envelope("Item 15, report from City Manager") == (
+        "Item 15, report from City Manager"
+    )

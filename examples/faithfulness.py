@@ -26,7 +26,16 @@ LOAD_BEARING = [
 
 
 def available_backends() -> list[str]:
-    return [row["name"] for row in grug.backend_info() if row["available"]]
+    """Backends usable with no arguments.
+
+    ``available`` only means the dependencies are installed. ``modern`` needs a
+    checkpoint name, so it is installed and unusable at the same time.
+    """
+    return [
+        row["name"]
+        for row in grug.backend_info()
+        if row["available"] and not row["requires_configuration"]
+    ]
 
 
 def main() -> int:
