@@ -1,16 +1,16 @@
 <div align="center">
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/grug-banner-dark.svg">
-  <img alt="grug. grug make text small. grug keep meaning." src="docs/assets/grug-banner-light.svg" width="540">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/akshayballal95/grug/main/docs/assets/grug-banner-dark.svg">
+  <img alt="grug. grug make text small. grug keep meaning." src="https://raw.githubusercontent.com/akshayballal95/grug/main/docs/assets/grug-banner-light.svg" width="540">
 </picture>
 
 Shrink anything feed LLM. Keep words change answer.
 
-[![PyPI](https://img.shields.io/pypi/v/grugify)](https://pypi.org/project/grugify/)
+[![PyPI](https://img.shields.io/pypi/v/grugify?cacheSeconds=300)](https://pypi.org/project/grugify/)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://github.com/akshayballal95/grug)
 [![CI](https://github.com/akshayballal95/grug/actions/workflows/ci.yml/badge.svg)](https://github.com/akshayballal95/grug/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/akshayballal95/grug/blob/main/LICENSE)
 
 </div>
 
@@ -53,32 +53,26 @@ add remove, not code fork.
 
 ## The numbers
 
-600 questions over 694k tokens of [MeetingBank](https://huggingface.co/datasets/microsoft/MeetingBank-LLMCompressed) transcripts, compressed rate 0.33, answered by Kimi K2.5, scored against reference answers:
+600 questions over 694k tokens of [MeetingBank](https://huggingface.co/datasets/microsoft/MeetingBank-LLMCompressed) transcripts, compressed rate 0.33, answered Claude Sonnet 4.6, scored against reference answers:
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/qa-quality-dark.svg">
-  <img alt="Answer quality vs tokens sent: grug rules beats the uncompressed baseline with 62% of the tokens; the grug classifier keeps F1 0.71 at 37% of tokens; LLMLingua-2 is lowest." src="docs/assets/qa-quality-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/akshayballal95/grug/main/docs/assets/qa-quality-dark.svg">
+  <img alt="Answer quality vs tokens sent: grug rules beats the uncompressed baseline with 62% of the tokens; the grug classifier keeps F1 0.70 with 37%." src="https://raw.githubusercontent.com/akshayballal95/grug/main/docs/assets/qa-quality-light.svg">
 </picture>
 
-Compression only helps if meaning survives it. Same run, scored dropped
-negations:
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/negation-loss-dark.svg">
-  <img alt="Negations lost during compression: LLMLingua-2 drops 43%, the grug classifier 2%, grug rules none." src="docs/assets/negation-loss-light.svg">
-</picture>
+Compression only helps if meaning survives it. Scored dropped negations same run, neither grug backend lost single one:
 
 | Backend | Tokens kept | Exact match | F1 | Negations lost |
 | --- | ---: | ---: | ---: | ---: |
-| original (no compression) | 100% | 0.61 | 0.76 | n/a |
-| **grug rules** | 62% | **0.62** | **0.78** | **0%** |
-| **grug classifier** (mmbert-small) | 37% | 0.58 | 0.71 | 2% |
-| LLMLingua-2 | 30% | 0.56 | 0.70 | 43% |
+| original (no compression) | 100% | 0.62 | 0.75 | n/a |
+| **grug rules** | 62% | **0.61** | **0.76** | **0%** |
+| **grug classifier** (mbert-control) | 37% | 0.58 | 0.70 | **0%** |
+| LLMLingua-2 | 30% | 0.56 | 0.69 | 43% |
 
-Two things stand out. Compressing `grug rules` scored *better* sending full document, sounds wrong until remember what deletes noise. classifier reaches third tokens same answer quality LLMLingua-2 while losing 2% negations instead 43%.
+Two things stand out. Compressing `grug rules` scored *higher F1* sending full document, 62% tokens -- sounds wrong until remember what deletes noise. Exact match hair lower, 0.61 against 0.62, wash rather win. classifier reaches third tokens slightly better answer quality LLMLingua-2, losing no negations LLMLingua-2 loses 43%.
 
 Reproduce `grug benchmark qa`. Raw results
-[`benchmarks/`](benchmarks/kimi-k2.5-full/).
+[`benchmarks/`](https://github.com/akshayballal95/grug/tree/main/benchmarks/sonnet46/).
 
 ## Quick start
 
@@ -110,7 +104,7 @@ result = grug.compress(
     document,
     rate=0.33,
     backend="classifier",
-    backend_kwargs={"model_name": "akshayballal/grug-mmbert-small-meetingbank"},
+    backend_kwargs={"model_name": "akshayballal/grug-mbert-control-meetingbank"},
 )
 ```
 
@@ -123,7 +117,7 @@ result = grug.compress(
 
 Both extractive: output subsequence input, neither can invent fact. `rate` means same thing everywhere, fraction tokens *keep*. backend cannot hit exactly reports what achieved `result.ratio`.
 
-classifier takes Hugging Face token-classification checkpoint trained preserve/discard head fast tokenizer (ModernBERT, mmBERT, EuroBERT all work). Training own three commands; see [TRAINING.md](TRAINING.md).
+classifier takes Hugging Face token-classification checkpoint trained preserve/discard head fast tokenizer (ModernBERT, mmBERT, EuroBERT all work). Training own three commands; see [TRAINING.md](https://github.com/akshayballal95/grug/blob/main/TRAINING.md).
 
 ## The rules engine
 
@@ -154,13 +148,13 @@ register_language(
     Language(
         code="de",
         rules=RuleSet(WordClassRule("artikel", {"der", "die", "das"}, priority=10)),
-        never_drop=frozenset({"nicht", "kein", "keine", "ohne"}),
+        negations=frozenset({"nicht", "kein", "keine", "ohne"}),
     )
 )
 backend = RulesBackend(language="de")
 ```
 
-Because vetoes belong engine, badly written custom rule cannot break guarantees. test hostile rule nominates every single word document, negations, numbers, code spans still come through. [`examples/rules_backend.py`](examples/rules_backend.py) walks all it.
+Because vetoes belong engine, badly written custom rule cannot break guarantees. test hostile rule nominates every single word document, negations, numbers, code spans still come through. [`examples/rules_backend.py`](https://github.com/akshayballal95/grug/blob/main/examples/rules_backend.py) walks all it.
 
 ## Faithfulness
 
@@ -171,7 +165,7 @@ Because vetoes belong engine, badly written custom rule cannot break guarantees.
 
 Prevention first: rules engine will not drop negations, digits, or connectives numbers rate, classifier pins negations, digits, detected entities, markdown structure before ranks anything.
 
-Verification second: every compression checked negation loss, negation scope loss, number loss, entity loss. no NER model no ML verifier, regex exact matching. costs precision entities buys checker works exactly terse, ungrammatical text model-based checker would choke microseconds.
+Verification second: every compression checked negation loss, negation scope loss, number loss, lost relations numbers (`3 of 12` collapsing to `3 12`), entity loss. verifier speaks backend's language: give rules backend German pack negations what checked, capitalisation-based entity heuristics stand down languages capitalise every noun. no NER model no ML verifier, regex exact matching. costs precision entities buys checker works exactly terse, ungrammatical text model-based checker would choke microseconds.
 
 clean run means nothing suspicious found, not compression provably faithful. Treat like smoke alarm.
 
@@ -259,7 +253,7 @@ codebase small purpose: two backends, one verifier, one chunker. If looking some
 
 ## License
 
-[MIT](LICENSE). The bundled benchmark uses the
+[MIT](https://github.com/akshayballal95/grug/blob/main/LICENSE). The bundled benchmark uses the
 [MeetingBank-LLMCompressed](https://huggingface.co/datasets/microsoft/MeetingBank-LLMCompressed)
 dataset; check license before shipping checkpoint trained it.
 
@@ -269,6 +263,6 @@ dataset; check license before shipping checkpoint trained it.
 
 *grug not need many words. grug need right words.*
 
-README, [compressed grug itself](README.grug.md).
+README, [compressed grug itself](https://github.com/akshayballal95/grug/blob/main/README.grug.md).
 
 </div>

@@ -95,15 +95,17 @@ def main() -> int:
             rules=RuleSet(
                 WordClassRule("artikel", {"der", "die", "das", "ein", "eine"}, priority=10),
             ),
-            never_drop=frozenset({"nicht", "kein", "keine", "ohne"}),
+            negations=frozenset({"nicht", "kein", "keine", "ohne"}),
+            capitalized_names=False,  # German capitalises every noun
         )
     )
     satz = "Der Bericht ist nicht die endgültige Antwort auf das Problem."
-    result = RulesBackend(language="de").compress(satz, rate=0.3)
+    result = grug.compress(satz, rate=0.3, backend=RulesBackend(language="de"))
     print(f"  in : {satz}")
-    print(f"  out: {result.text}")
+    print(f"  out: {result.text}   (warnings: {result.warnings or 'none'})")
     print("\n  The engine is language-agnostic; a Language pack supplies the word")
-    print("  classes to drop and the words that must never go (its negations).")
+    print("  classes to drop, its negations (protected AND verified), and whether")
+    print("  capitalisation marks names. The verifier speaks the pack's language.")
     return 0
 
 

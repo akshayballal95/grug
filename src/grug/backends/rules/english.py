@@ -6,7 +6,7 @@ a custom class can slot between two built-ins.
 
 from __future__ import annotations
 
-from ...verify import NEGATION_WORDS
+from ...verify import NEGATION_WORDS, SCOPE_SKIP
 from .core import Language, PhraseRule, RuleSet, WordClassRule, register_language
 
 __all__ = ["ENGLISH"]
@@ -85,6 +85,7 @@ ENGLISH = register_language(
             WordClassRule("function-words", FUNCTION_WORDS, priority=40),
             WordClassRule("pronouns", PRONOUNS, priority=50),
         ),
-        never_drop=NEGATION_WORDS,
+        negations=NEGATION_WORDS,
+        scope_skip=SCOPE_SKIP,
     )
 )
