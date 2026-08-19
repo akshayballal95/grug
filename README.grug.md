@@ -4,7 +4,7 @@
 
 **grug make text small. grug keep meaning.**
 
-Shrink anything you feed an LLM. Keep the words that change the answer.
+Shrink anything feed LLM. Keep words change answer.
 
 [![PyPI](https://img.shields.io/pypi/v/grugify)](https://pypi.org/project/grugify/)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://github.com/akshayballal95/grug)
@@ -15,13 +15,7 @@ Shrink anything you feed an LLM. Keep the words that change the answer.
 
 ---
 
-Most of the text that ends up in a context window is padding. Documents you stuff
-into RAG, tool results an agent loops back to itself, transcripts, tickets, logs:
-models answer just as well without the articles, the copulas, and the "it is
-important to note that". grug deletes the padding and refuses to touch what
-actually carries meaning: negations, numbers, names, code, URLs, markdown
-structure. Then it checks its own output and warns you if anything load-bearing
-went missing anyway.
+Most text ends up context window padding. Documents stuff RAG, tool results agent loops back itself, transcripts, tickets, logs: models answer without articles, copulas, "". grug deletes padding refuses touch what carries meaning: negations, numbers, names, code, URLs, markdown structure. checks own output warns if anything load-bearing went missing anyway.
 
 ```text
 Before (94 tokens)                          After `grug compress --rate 0.5` (65 tokens)
@@ -38,43 +32,34 @@ The key economic point is easy to get
 wrong: bills scale with volume, not price.
 ```
 
-Every number made it through, and so did both negations. The second one
-(`not price`) is the whole point of the paragraph. Zero warnings from the verifier.
+Every number made both negations. second one (`not price`) whole point paragraph. Zero warnings verifier.
 
-## Why this exists
+## Why exists
 
-Compressing LLM input is not new. The problem with existing compressors is that
-they score words by how much information they seem to carry, and a word like "not"
-is three characters of function word that looks eminently droppable. Drop it and
-the compressed text asserts the opposite of the source, in fluent prose that
-nothing downstream will question.
+Compressing LLM input not new. problem existing compressors score words how much information seem carry, word like "not" three characters function word looks eminently droppable. Drop compressed text asserts opposite source, fluent prose nothing downstream will question.
 
-That risk is the same whether the text is a prompt, a retrieved document, or the
-output of a tool call an agent is about to reason over. grug is built around not
-taking it:
+risk same whether text prompt, retrieved document, or output tool call agent reason over. grug built around not taking it:
 
-- Negations, digits, code, URLs, and the words relating two numbers can never be
-  dropped. `3 of 12` never comes back as `3 12`. This lives in the engine, not in
-  a setting you could forget to turn on.
-- Every result gets checked afterwards for lost negations, numbers, and names,
-  and the warnings land in `result.warnings`. The CLI exit codes are made for CI.
-- The default backend is pure Python. No torch, no downloads, milliseconds per
-  document. `import grug` never imports torch even when the extras are installed.
-- Word lists, regex rules, phrase rewrites, and whole languages are data you can
-  add and remove, not code you have to fork.
+- Negations, digits, code, URLs, words relating two numbers can never
+dropped. `3 of 12` never comes back `3 12`. lives engine, not
+setting could forget turn on.
+- Every result checked afterwards lost negations, numbers, names,
+warnings land `result.warnings`. CLI exit codes made CI.
+- The default backend pure Python. No torch, no downloads, milliseconds per
+document. `import grug` never imports torch even extras installed.
+- Word lists, regex rules, phrase rewrites, whole languages data can
+add remove, not code fork.
 
 ## The numbers
 
-600 questions over 694k tokens of [MeetingBank](https://huggingface.co/datasets/microsoft/MeetingBank-LLMCompressed)
-transcripts, compressed at rate 0.33, answered by Kimi K2.5, scored against
-reference answers:
+600 questions over 694k tokens of [MeetingBank](https://huggingface.co/datasets/microsoft/MeetingBank-LLMCompressed) transcripts, compressed rate 0.33, answered by Kimi K2.5, scored against reference answers:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/qa-quality-dark.svg">
   <img alt="Answer quality vs tokens sent: grug rules beats the uncompressed baseline with 62% of the tokens; the grug classifier keeps F1 0.71 at 37% of tokens; LLMLingua-2 is lowest." src="docs/assets/qa-quality-light.svg">
 </picture>
 
-Compression only helps if the meaning survives it. Same run, scored for dropped
+Compression only helps if meaning survives it. Same run, scored dropped
 negations:
 
 <picture>
@@ -89,12 +74,9 @@ negations:
 | **grug classifier** (mmbert-small) | 37% | 0.58 | 0.71 | 2% |
 | LLMLingua-2 | 30% | 0.56 | 0.70 | 43% |
 
-Two things stand out. Compressing with `grug rules` actually scored *better* than
-sending the full document, which sounds wrong until you remember that what it
-deletes is noise. And the classifier reaches a third of the tokens at the same
-answer quality as LLMLingua-2 while losing 2% of negations instead of 43%.
+Two things stand out. Compressing `grug rules` scored *better* sending full document, sounds wrong until remember what deletes noise. classifier reaches third tokens same answer quality LLMLingua-2 while losing 2% negations instead 43%.
 
-Reproduce it with `grug benchmark qa`. Raw results are in
+Reproduce `grug benchmark qa`. Raw results
 [`benchmarks/`](benchmarks/kimi-k2.5-full/).
 
 ## Quick start
@@ -112,7 +94,7 @@ result.ratio     # what was achieved, not what was asked for
 result.warnings  # faithfulness report; [] means nothing suspicious
 ```
 
-Or from the shell:
+Or shell:
 
 ```bash
 grug compress notes.md                  # writes notes.grug.md, stats to stderr
@@ -120,8 +102,7 @@ grug compress - < in.txt > out.txt      # stdin to stdout
 grug verify original.txt compressed.txt # faithfulness checks on their own
 ```
 
-If you want deeper compression than the rule lists can reach, install the trained
-classifier with `pip install 'grugify[classifier]'`:
+If want deeper compression rule lists can reach, install trained classifier `pip install 'grugify[classifier]'`:
 
 ```python
 result = grug.compress(
@@ -139,20 +120,13 @@ result = grug.compress(
 | `rules` | included | Deletes words its rule set nominates; the engine vetoes everything load-bearing | floors out around 0.6, when it runs out of safe words to drop | milliseconds |
 | `classifier` | `grugify[classifier]` | A fine-tuned encoder scores every word and the top-`rate` fraction survives, in order | 0.2 to 0.5 | about 0.2s per 400-token chunk on CPU, after a one-off model load |
 
-Both are extractive: the output is a subsequence of the input, so neither can
-invent a fact. `rate` means the same thing everywhere, the fraction of tokens to
-*keep*. A backend that cannot hit it exactly reports what it actually achieved in
-`result.ratio`.
+Both extractive: output subsequence input, neither can invent fact. `rate` means same thing everywhere, fraction tokens *keep*. backend cannot hit exactly reports what achieved `result.ratio`.
 
-The classifier takes any Hugging Face token-classification checkpoint with a
-trained preserve/discard head and a fast tokenizer (ModernBERT, mmBERT, EuroBERT
-all work). Training your own is three commands; see [TRAINING.md](TRAINING.md).
+classifier takes Hugging Face token-classification checkpoint trained preserve/discard head fast tokenizer (ModernBERT, mmBERT, EuroBERT all work). Training own three commands; see [TRAINING.md](TRAINING.md).
 
 ## The rules engine
 
-The default backend splits responsibility in two. Rules nominate words to drop.
-The engine decides, and its vetoes always win. A token budget derived from `rate`
-controls how deep the cutting goes. Everything on the rules side is composable:
+default backend splits responsibility two. Rules nominate words drop. engine decides, vetoes always win. token budget derived `rate` controls how deep cutting goes. Everything rules side composable:
 
 ```python
 from grug.backends.rules import ENGLISH, PatternRule, RulesBackend, WordClassRule
@@ -171,7 +145,7 @@ backend = RulesBackend(
 )
 ```
 
-A new language is a data pack, not a fork:
+new language data pack, not fork:
 
 ```python
 from grug.backends.rules import Language, RuleSet, WordClassRule, register_language
@@ -184,10 +158,7 @@ register_language(Language(
 backend = RulesBackend(language="de")
 ```
 
-Because the vetoes belong to the engine, a badly written custom rule cannot break
-the guarantees. There is a test where a hostile rule nominates every single word
-in the document, and the negations, numbers, and code spans still come through.
-[`examples/rules_backend.py`](examples/rules_backend.py) walks through all of it.
+Because vetoes belong engine, badly written custom rule cannot break guarantees. test hostile rule nominates every single word document, negations, numbers, code spans still come through. [`examples/rules_backend.py`](examples/rules_backend.py) walks all it.
 
 ## Faithfulness
 
@@ -196,18 +167,11 @@ in the document, and the negations, numbers, and code spans still come through.
 ["negation lost: 'not' (1× → 0×) — meaning may be inverted"]
 ```
 
-Prevention first: the rules engine will not drop negations, digits, or the
-connectives between numbers at any rate, and the classifier pins negations,
-digits, detected entities, and markdown structure before it ranks anything.
+Prevention first: rules engine will not drop negations, digits, or connectives numbers rate, classifier pins negations, digits, detected entities, markdown structure before ranks anything.
 
-Verification second: every compression is checked for negation loss, negation
-scope loss, number loss, and entity loss. There is no NER model and no ML in the
-verifier, just regex and exact matching. That costs some precision on entities
-and buys a checker that works on exactly the kind of terse, ungrammatical text a
-model-based checker would choke on, in microseconds.
+Verification second: every compression checked negation loss, negation scope loss, number loss, entity loss. no NER model no ML verifier, regex exact matching. costs precision entities buys checker works exactly terse, ungrammatical text model-based checker would choke microseconds.
 
-A clean run means nothing suspicious was found, not that the compression is
-provably faithful. Treat it like a smoke alarm.
+clean run means nothing suspicious found, not compression provably faithful. Treat like smoke alarm.
 
 ### CI gating
 
@@ -217,13 +181,11 @@ provably faithful. Treat it like a smoke alarm.
 | `1` | Error: bad file, unknown backend, missing dependency |
 | `2` | Compressed, but the verifier flagged something |
 
-Exit code 2 means "a human should read this diff", not "this failed".
+Exit code 2 means human should read diff", not failed".
 
 ## Markdown awareness
 
-Documents are parsed with a real CommonMark parser
-([markdown-it-py](https://github.com/executablebooks/markdown-it-py)) rather than
-pattern-matched, so structure survives:
+Documents parsed real CommonMark parser ([markdown-it-py](https://github.com/executablebooks/markdown-it-py)) rather pattern-matched, structure survives:
 
 | Element | Treatment |
 | --- | --- |
@@ -234,8 +196,7 @@ pattern-matched, so structure survives:
 | Numbers and identifiers with separators (`1,250`, `us-east-1`, `v2.1.0-rc3`) | Protected as spans |
 | Blank lines | Hard chunk boundaries, so no backend can collapse a paragraph break |
 
-Long documents are chunked to roughly 450 tokens on sentence boundaries and
-rejoined with the original layout.
+Long documents chunked roughly 450 tokens sentence boundaries rejoined original layout.
 
 ## CLI reference
 
@@ -257,10 +218,9 @@ grug benchmark qa --help                  # reproduce the numbers above
 | `--json` | Emit the full result as JSON on stdout. |
 | `--quiet`, `-q` | Suppress the stats line. |
 
-## Write your own backend
+## Write own backend
 
-Subclass one ABC and register it. It then shows up in `grug.compress()`,
-`grug.Compressor`, and the CLI without any changes to grug:
+Subclass one ABC register it. shows up `grug.compress()`, `grug.Compressor`, CLI without changes grug:
 
 ```python
 from grug.base import CompressionResult, CompressorBackend
@@ -277,8 +237,7 @@ class ShoutyBackend(CompressorBackend):
         return CompressionResult.build(text, kept, self.name)
 ```
 
-To ship it as a package, advertise it through an entry point and `pip install`
-is all a user needs:
+ship package, advertise entry point `pip install` all user needs:
 
 ```toml
 [project.entry-points."grug.backends"]
@@ -294,16 +253,13 @@ uv run pytest -m "not slow"   # fast suite, no model downloads
 uv run ruff check src tests examples scripts
 ```
 
-The codebase is small on purpose: two backends, one verifier, one chunker. If you
-are looking for somewhere to start, a language pack for the rules engine, a
-benchmark on your own data, or a trained checkpoint for a new encoder would all
-be welcome PRs.
+codebase small purpose: two backends, one verifier, one chunker. If looking somewhere start, language pack rules engine, benchmark own data, or trained checkpoint new encoder would all welcome PRs.
 
 ## License
 
 [MIT](LICENSE). The bundled benchmark uses the
 [MeetingBank-LLMCompressed](https://huggingface.co/datasets/microsoft/MeetingBank-LLMCompressed)
-dataset; check its license before shipping a checkpoint trained on it.
+dataset; check license before shipping checkpoint trained it.
 
 ---
 
@@ -311,6 +267,6 @@ dataset; check its license before shipping a checkpoint trained on it.
 
 *grug not need many words. grug need right words.*
 
-This README, [compressed by grug itself](README.grug.md).
+README, [compressed grug itself](README.grug.md).
 
 </div>

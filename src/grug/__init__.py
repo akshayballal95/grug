@@ -1,4 +1,4 @@
-"""grug -- shrink documents into terse caveman text so prompts cost less.
+"""grug -- shrink documents into terse caveman text so LLM input costs less.
 
     >>> import grug
     >>> result = grug.compress(long_document, rate=0.4)
@@ -107,7 +107,7 @@ class Compressor:
     Prefer this over :func:`compress` in a loop: the backend (and its model)
     is constructed once and held.
 
-        >>> comp = Compressor(backend="lingua2", device="cuda")
+        >>> comp = Compressor(backend="rules")
         >>> results = comp.compress_batch(documents, rate=0.5)
     """
 
@@ -127,10 +127,7 @@ class Compressor:
         """
         Args:
             backend: Registry name, a ready-made backend instance, or ``None``
-                to pick the best installed one. Left as ``None``, the choice is
-                deferred to each :meth:`compress` call so that passing a
-                ``question`` can select a question-aware backend; naming one
-                here binds it and a question will never swap it out.
+                for the default (``rules``).
             verify: Run faithfulness checks and populate ``warnings``.
             chunk_tokens: Chunk size ceiling handed to the chunker.
             preserve_code: Pass fenced code blocks through untouched.
@@ -147,15 +144,9 @@ class Compressor:
                 raise TypeError(
                     "backend_kwargs cannot be combined with an already-constructed backend"
                 )
-            self._backend: CompressorBackend | None = backend
+            self._backend = backend
         else:
-            self._backend = None if backend is None else create_backend(backend, **backend_kwargs)
-        # Only an unnamed backend is re-resolved per call; instances are cached
-        # by name so alternating question and no-question calls load each model
-        # at most once.
-        self._auto = self._backend is None
-        self._backend_kwargs = backend_kwargs
-        self._resolved: dict[str, CompressorBackend] = {}
+            self._backend = create_backend(backend or default_backend_name(), **backend_kwargs)
 
         self.verify = verify
         self.chunk_tokens = chunk_tokens
@@ -167,23 +158,13 @@ class Compressor:
 
     @property
     def backend(self) -> CompressorBackend:
-        """The backend in use; for an unbound compressor, the one a plain call picks."""
-        return self._backend if self._backend is not None else self._resolve(None)
+        """The backend in use."""
+        return self._backend
 
     @property
     def backend_name(self) -> str:
         """Registry name of the backend in use."""
-        return self.backend.name
-
-    def _resolve(self, question: str | None) -> CompressorBackend:
-        """The backend for this call, re-picking only when nothing was named."""
-        if self._backend is not None and not self._auto:
-            return self._backend
-        name = default_backend_name(question=bool(question))
-        if name not in self._resolved:
-            self._resolved[name] = create_backend(name, **self._backend_kwargs)
-        self._backend = self._resolved[name]
-        return self._backend
+        return self._backend.name
 
     def compress(
         self,
@@ -191,7 +172,6 @@ class Compressor:
         rate: float = 0.5,
         *,
         verify: bool | None = None,
-        question: str | None = None,
         **kwargs: Any,
     ) -> CompressionResult:
         """Compress one document, chunking it first if it is long.
@@ -200,20 +180,11 @@ class Compressor:
             text: The document.
             rate: Fraction of tokens to keep.
             verify: Override the instance's faithfulness setting.
-            question: What the compressed text has to remain sufficient to
-                answer. On a question-aware backend this conditions the scoring
-                so tokens the question depends on are kept. On any other
-                backend it is ignored, with a warning -- never silently.
             **kwargs: Forwarded to the backend's ``compress``.
         """
-        backend = self._resolve(question)
-        ignored = bool(question) and not backend.question_aware
-        if question and not ignored:
-            kwargs["question"] = question
-
         result = compress_document(
             text,
-            backend,
+            self._backend,
             rate=rate,
             max_tokens=self.chunk_tokens,
             preserve_code=self.preserve_code,
@@ -223,10 +194,6 @@ class Compressor:
             preserve_identifiers=self.preserve_identifiers,
             **kwargs,
         )
-        if ignored:
-            result.warnings.append(
-                f"question ignored: backend {backend.name!r} is not question-aware"
-            )
         should_verify = self.verify if verify is None else verify
         if should_verify:
             result.warnings.extend(run_verify(text, result.text))
@@ -238,13 +205,10 @@ class Compressor:
         rate: float = 0.5,
         *,
         verify: bool | None = None,
-        question: str | None = None,
         **kwargs: Any,
     ) -> list[CompressionResult]:
         """Compress several documents, reusing the loaded backend for all of them."""
-        return [
-            self.compress(t, rate=rate, verify=verify, question=question, **kwargs) for t in texts
-        ]
+        return [self.compress(t, rate=rate, verify=verify, **kwargs) for t in texts]
 
     def __repr__(self) -> str:
         return f"Compressor(backend={self.backend_name!r})"
@@ -255,7 +219,6 @@ def compress(
     rate: float = 0.5,
     *,
     backend: str | CompressorBackend | None = None,
-    question: str | None = None,
     verify: bool = True,
     chunk_tokens: int = DEFAULT_CHUNK_TOKENS,
     preserve_code: bool = True,
@@ -270,15 +233,13 @@ def compress(
 
     A one-shot :class:`Compressor`; see its docstring for the arguments. The
     ``backend`` may be a registry name or an instance, and defaults to
-    ``lingua2`` when its dependencies are installed, otherwise ``rules``.
-    Backend construction is cached, so repeated calls do not reload the model.
+    ``rules``. Backend construction is cached, so repeated calls do not reload
+    a model.
 
     Args:
         text: The document to compress.
         rate: Fraction of tokens to keep, in ``(0.0, 1.0]``. The achieved value
             is reported as :attr:`CompressionResult.ratio`.
-        question: What the compressed text must remain sufficient to answer.
-            With no ``backend`` named, this selects a question-aware one.
         backend_kwargs: Forwarded to the backend's *constructor*, the way
             ``Compressor(backend, **kwargs)`` does -- ``{"device": "cuda"}``,
             ``{"model_name": ...}``. Instances are cached per distinct set, so
@@ -292,9 +253,7 @@ def compress(
             raise TypeError("backend_kwargs cannot be combined with an already-constructed backend")
         instance = backend
     else:
-        instance = _shared_backend(
-            backend or default_backend_name(question=bool(question)), construction
-        )
+        instance = _shared_backend(backend or default_backend_name(), construction)
     _reject_construction_kwargs(instance, kwargs)
     return Compressor(
         instance,
@@ -305,4 +264,4 @@ def compress(
         preserve_markdown=preserve_markdown,
         preserve_numbers=preserve_numbers,
         preserve_identifiers=preserve_identifiers,
-    ).compress(text, rate=rate, question=question, **kwargs)
+    ).compress(text, rate=rate, **kwargs)

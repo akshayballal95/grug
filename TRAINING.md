@@ -1,14 +1,13 @@
 # Reproducing the compressor
 
-grug's `lingua2` backend uses a checkpoint someone else trained. This is how to
-train your own — corpus, labels, encoder — with the same commands the project
-uses.
+grug's `classifier` backend needs a trained checkpoint. This is how to train
+your own — corpus, labels, encoder — with the same commands the project uses.
 
 ```bash
-pip install 'grug[train]'
+pip install 'grugify[train]'
 ```
 
-That pulls torch, transformers and datasets. Plain `pip install grug` stays
+That pulls torch, transformers and datasets. Plain `pip install grugify` stays
 free of all three, and `import grug` never imports torch even with the extra
 installed.
 
@@ -24,9 +23,9 @@ Then use it like any other backend:
 
 ```python
 import grug
-from grug.backends.modern import ModernBackend
+from grug.backends.classifier import ClassifierBackend
 
-comp = grug.Compressor(ModernBackend(model_name="ckpt/"))
+comp = grug.Compressor(ClassifierBackend(model_name="ckpt/"))
 comp.compress(document, rate=0.4)
 ```
 

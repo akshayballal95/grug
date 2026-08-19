@@ -64,15 +64,46 @@ def main() -> int:
         print(f"  in : {source}")
         print(f"  out: {result.text}   (ratio {result.ratio:.2f})\n")
 
-    rule("5. Tuning: keep_words and drop_pleasantries")
-    from grug.backends.rules import RulesBackend
+    rule("5. Composing rules: extend a class, remove one, keep words")
+    from grug.backends.rules import ENGLISH, PatternRule, RulesBackend, WordClassRule
 
     line = "Please note that the report is available on the dashboard."
+    polite = ENGLISH.rules.remove("pleasantries")
     print(f"  default        : {RulesBackend().compress(line, rate=0.4).text}")
     print(f"  keep 'the'     : {RulesBackend(keep_words={'the'}).compress(line, rate=0.4).text}")
-    print(
-        f"  keep filler    : {RulesBackend(drop_pleasantries=False).compress(line, rate=0.95).text}"
+    print(f"  keep phrases   : {RulesBackend(rules=polite).compress(line, rate=0.95).text}")
+
+    corp = ENGLISH.rules.add(WordClassRule("corp-speak", {"synergy", "leverage"}, priority=5))
+    jargon = "We leverage synergy to ship the product faster."
+    print(f"  corp-speak     : {RulesBackend(rules=corp).compress(jargon, rate=0.4).text}")
+
+    hedges = ENGLISH.rules.add(PatternRule("hedges", r"(arguabl|probabl|possibl)\w*", priority=5))
+    hedged = "Arguably the fix probably works everywhere."
+    print(f"  drop by regex  : {RulesBackend(rules=hedges).compress(hedged, rate=0.4).text}")
+
+    ops = "The IT team said it is ready for the audit."
+    caps = RulesBackend(keep_patterns=(r"[A-Z]{2,}",))
+    print(f"  default        : {RulesBackend().compress(ops, rate=0.3).text}")
+    print(f"  keep by regex  : {caps.compress(ops, rate=0.3).text}")
+
+    rule("6. Bringing in a new language")
+    from grug.backends.rules import Language, RuleSet, register_language
+
+    register_language(
+        Language(
+            code="de",
+            rules=RuleSet(
+                WordClassRule("artikel", {"der", "die", "das", "ein", "eine"}, priority=10),
+            ),
+            never_drop=frozenset({"nicht", "kein", "keine", "ohne"}),
+        )
     )
+    satz = "Der Bericht ist nicht die endgültige Antwort auf das Problem."
+    result = RulesBackend(language="de").compress(satz, rate=0.3)
+    print(f"  in : {satz}")
+    print(f"  out: {result.text}")
+    print("\n  The engine is language-agnostic; a Language pack supplies the word")
+    print("  classes to drop and the words that must never go (its negations).")
     return 0
 
 

@@ -38,14 +38,13 @@ def dummy():
 def test_builtin_backends_are_registered():
     names = list_backends()
     assert "rules" in names
-    assert "lingua2" in names
-    assert "longlingua" in names
+    assert "classifier" in names
 
 
 def test_preferred_backends_are_listed_first():
     """Built-ins in preference order, third-party registrations after them."""
     names = list_backends()
-    assert names[:3] == ["lingua2", "longlingua", "rules"]
+    assert names[:2] == ["rules", "classifier"]
 
 
 def test_register_and_create(dummy):
@@ -87,22 +86,22 @@ def test_unknown_backend_lists_alternatives():
 
 def test_missing_dependency_error_names_the_extra():
     """A backend whose deps are absent must say which extra installs them."""
-    lingua2 = get_backend_class("lingua2")
-    if lingua2.is_available():
-        pytest.skip("llmlingua is installed; nothing to report as missing")
+    classifier = get_backend_class("classifier")
+    if classifier.is_available():
+        pytest.skip("torch is installed; nothing to report as missing")
 
     with pytest.raises(MissingDependencyError) as excinfo:
-        create_backend("lingua2")
+        create_backend("classifier")
     message = str(excinfo.value)
-    assert "pip install 'grug[lingua2]'" in message
-    assert "llmlingua" in message
+    assert "pip install 'grugify[classifier]'" in message
+    assert "torch" in message
 
 
 def test_backend_info_reports_availability():
     rows = {row["name"]: row for row in backend_info()}
     assert rows["rules"]["available"] is True
     assert rows["rules"]["extra"] is None
-    assert rows["lingua2"]["extra"] == "lingua2"
+    assert rows["classifier"]["extra"] == "classifier"
     assert rows["rules"]["description"]
 
 
@@ -163,7 +162,7 @@ def test_importing_grug_does_not_import_torch():
     code = (
         "import sys, grug; "
         "grug.list_backends(); "
-        "print([m for m in ('torch', 'transformers', 'llmlingua') if m in sys.modules])"
+        "print([m for m in ('torch', 'transformers') if m in sys.modules])"
     )
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
     assert out.stdout.strip() == "[]"

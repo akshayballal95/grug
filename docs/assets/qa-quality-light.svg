@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 430" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" role="img" aria-label="Answer quality versus tokens sent: grug rules beats the uncompressed baseline with 62% of the tokens; the grug classifier keeps F1 0.71 at 37%; LLMLingua-2 sits lowest.">
+<rect width="760" height="430" rx="8" fill="#fcfcfb"/>
+<text x="24.0" y="34.0" font-size="16" fill="#0b0b0b" font-weight="700">Keep the answers, drop the tokens</text>
+<text x="24.0" y="54.0" font-size="11.5" fill="#52514e">MeetingBank QA · 600 questions over 694k tokens · requested rate 0.33 · answers judged by Kimi K2.5</text>
+<line x1="70" y1="374.0" x2="726" y2="374.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="62.0" y="378.0" font-size="11" fill="#898781" text-anchor="end">0.60</text>
+<line x1="70" y1="300.0" x2="726" y2="300.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="62.0" y="304.0" font-size="11" fill="#898781" text-anchor="end">0.65</text>
+<line x1="70" y1="226.0" x2="726" y2="226.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="62.0" y="230.0" font-size="11" fill="#898781" text-anchor="end">0.70</text>
+<line x1="70" y1="152.0" x2="726" y2="152.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="62.0" y="156.0" font-size="11" fill="#898781" text-anchor="end">0.75</text>
+<line x1="70" y1="78.0" x2="726" y2="78.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="62.0" y="82.0" font-size="11" fill="#898781" text-anchor="end">0.80</text>
+<line x1="70" y1="374" x2="726" y2="374" stroke="#c3c2b7" stroke-width="1"/>
+<text x="70.0" y="392.0" font-size="11" fill="#898781" text-anchor="middle">0%</text>
+<text x="234.0" y="392.0" font-size="11" fill="#898781" text-anchor="middle">25%</text>
+<text x="398.0" y="392.0" font-size="11" fill="#898781" text-anchor="middle">50%</text>
+<text x="562.0" y="392.0" font-size="11" fill="#898781" text-anchor="middle">75%</text>
+<text x="726.0" y="392.0" font-size="11" fill="#898781" text-anchor="middle">100%</text>
+<text x="398.0" y="412.0" font-size="11" fill="#898781" text-anchor="middle">tokens sent to the LLM (% of the original document)</text>
+<text x="24.0" y="66.0" font-size="11" fill="#898781">answer quality (F1)</text>
+<line x1="70" y1="137.2" x2="726" y2="137.2" stroke="#898781" stroke-width="1" stroke-dasharray="4 4"/>
+<circle cx="726.0" cy="137.2" r="6" fill="none" stroke="#898781" stroke-width="2"/>
+<text x="714.0" y="159.2" font-size="12" fill="#52514e" text-anchor="end">original, uncompressed</text>
+<text x="714.0" y="174.2" font-size="11" fill="#898781" text-anchor="end">F1 0.76 · 100% tokens</text>
+<circle cx="476.3" cy="113.5" r="7" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<text x="487.3" y="97.5" font-size="12.5" fill="#0b0b0b" font-weight="600">grug rules</text>
+<text x="487.3" y="112.5" font-size="11" fill="#52514e">F1 0.78 · 62% tokens</text>
+<circle cx="312.6" cy="204.7" r="7" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
+<text x="323.6" y="188.7" font-size="12.5" fill="#0b0b0b" font-weight="600">grug classifier</text>
+<text x="323.6" y="203.7" font-size="11" fill="#52514e">F1 0.71 · 37% tokens</text>
+<circle cx="263.6" cy="231.4" r="7" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2"/>
+<text x="274.6" y="255.4" font-size="12.5" fill="#0b0b0b" font-weight="600">LLMLingua-2</text>
+<text x="274.6" y="270.4" font-size="11" fill="#52514e">F1 0.70 · 30% tokens</text>
+<text x="74.0" y="129.2" font-size="10.5" fill="#898781">uncompressed quality</text>
+</svg>

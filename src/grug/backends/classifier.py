@@ -1,14 +1,10 @@
-"""Token-classification backend for any modern encoder.
+"""Token-classification backend: score every word, keep the best.
 
-Same method as :mod:`~grug.backends.lingua2` -- score every word, keep the
-top-``rate`` fraction in original order -- but without the ``llmlingua``
-dependency, and without its tokenizer coupling: ``llmlingua`` dispatches
-sub-word merging on a substring of the model name and raises
-``NotImplementedError`` for anything but mBERT and XLM-R.
-
-This backend groups sub-words with the tokenizer's own ``word_ids()``, so it
-works with any fast tokenizer -- ModernBERT, mmBERT, EuroBERT, LFM2.5 -- and
-therefore with the checkpoints :mod:`grug.training` produces.
+A fine-tuned encoder scores each word's probability of being worth keeping;
+the top-``rate`` fraction survives, in original order. Sub-words are grouped
+with the tokenizer's own ``word_ids()``, so any fast tokenizer works --
+ModernBERT, mmBERT, EuroBERT -- and therefore any checkpoint
+:mod:`grug.training` produces.
 """
 
 from __future__ import annotations
@@ -19,11 +15,12 @@ import re
 from typing import Any
 
 from ..base import CompressionResult, CompressorBackend, MissingDependencyError
+from ..chunking import contains_placeholder
 from ..pinning import NUMBER_RE, collect_force_tokens, normalise_word
 from ..registry import register_backend
 from ..verify import NEGATION_FORCE_TOKENS, is_negation
 
-__all__ = ["DEFAULT_MODEL", "ModernBackend"]
+__all__ = ["DEFAULT_MODEL", "ClassifierBackend"]
 
 #: Trained by ``grug train``; see the reproduction guide in the README.
 #: No default on purpose. A base encoder like ``answerdotai/ModernBERT-base``
@@ -58,12 +55,12 @@ def join_words(words: list[str]) -> str:
 
 
 @register_backend
-class ModernBackend(CompressorBackend):
-    """Token classification with a modern 8k-context encoder."""
+class ClassifierBackend(CompressorBackend):
+    """Token classification with a fine-tuned long-context encoder."""
 
-    name = "modern"
-    description = "Token classification, any modern encoder. Needs torch and --model."
-    extra = "modern"
+    name = "classifier"
+    description = "Token classification with a trained encoder. Needs torch and --model."
+    extra = "classifier"
     generative = False
 
     def __init__(
@@ -229,9 +226,13 @@ class ModernBackend(CompressorBackend):
         for i, word in enumerate(words):
             core = normalise_word(word)
             # is_negation catches -n't contractions, whose cue is a suffix and
-            # so never matches a force list of whole words.
+            # so never matches a force list of whole words. Markdown markers
+            # are pinned so headings, quotes and tables keep their structure;
+            # placeholder words stand for stashed spans (code, URLs, markers),
+            # and dropping one would silently delete what it protects.
             if (
-                word.startswith("\n")
+                word.startswith(("\n", "#", ">", "|"))
+                or contains_placeholder(word)
                 or core in forced
                 or is_negation(core)
                 or (reserve_digit and NUMBER_RE.search(word))

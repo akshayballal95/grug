@@ -55,7 +55,7 @@ def _require_datasets() -> Any:
         import datasets
     except ImportError as exc:  # pragma: no cover - guarded by the extra
         raise ImportError(
-            "grug.training.data requires 'datasets'. Install it with: pip install 'grug[train]'"
+            "grug.training.data requires 'datasets'. Install it with: pip install 'grugify[train]'"
         ) from exc
     return datasets
 

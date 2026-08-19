@@ -26,7 +26,17 @@ LOAD_BEARING = [
 
 
 def available_backends() -> list[str]:
-    return [row["name"] for row in grug.backend_info() if row["available"]]
+    """Backends that can run here without extra options (a checkpoint, a device)."""
+    names = []
+    for row in grug.backend_info():
+        if not row["available"]:
+            continue
+        try:
+            grug.create_backend(row["name"])
+        except Exception:
+            continue  # needs an option this comparison cannot supply
+        names.append(row["name"])
+    return names
 
 
 def main() -> int:
@@ -64,19 +74,28 @@ def main() -> int:
                 print(f"         -> {warning}")
         print()
 
-    rule("4. Turning the safety off, to show it is doing something")
-    from grug.backends.rules import RulesBackend
+    rule("4. The safety lives in the engine, not in the rules")
+    from grug.backends.rules import Rule, RulesBackend, RuleSet
 
     sentence = "The migration is not automatic and no data is deleted."
     safe = RulesBackend().compress(sentence, rate=0.2)
-    unsafe = RulesBackend(keep_words=set()).compress(sentence, rate=0.2, drop_pleasantries=False)
-    print(f"  default (negations pinned) : {safe.text}")
+
+    class DropEverything(Rule):
+        """Nominates every word for deletion. The engine's vetoes still win."""
+
+        name = "hostile"
+
+        def drop_candidates(self, cores):
+            return ((0.0, i) for i in range(len(cores)))
+
+    hostile = RulesBackend(rules=RuleSet(DropEverything())).compress(sentence, rate=0.05)
+    print(f"  default (negations vetoed) : {safe.text}")
     print(f"  warnings                   : {safe.warnings or 'none'}")
     print()
-    print("  rules excludes negations from its candidate list outright; lingua2")
-    print("  pins them via force_tokens -- a strong default, not a guarantee,")
-    print("  which is why the verifier exists.")
-    print(f"  (same sentence, other options off: {unsafe.text})")
+    print("  rules vetoes negations at the engine level, whatever a rule asks for;")
+    print("  the classifier pins them via force_tokens -- a strong default, not a")
+    print("  guarantee, which is why the verifier exists.")
+    print(f"  (same sentence, a rule nominating every word: {hostile.text})")
 
     rule("5. CI gating")
     print(

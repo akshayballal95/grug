@@ -26,10 +26,10 @@ __all__ = [
 #: Entry-point group external packages advertise their backends under.
 ENTRY_POINT_GROUP = "grug.backends"
 
-#: Preference order when the caller does not name a backend. ``longlingua``
-#: sits behind ``lingua2``: it is the better choice only when there is a
-#: question to condition on, and that case is handled separately.
-_PREFERRED_ORDER = ("lingua2", "longlingua", "rules")
+#: Preference order when the caller does not name a backend. ``classifier`` is
+#: deliberately absent: it cannot be constructed without a checkpoint, so the
+#: zero-configuration default is always ``rules``.
+_PREFERRED_ORDER = ("rules",)
 
 _REGISTRY: dict[str, type[CompressorBackend]] = {}
 _builtins_loaded = False
@@ -159,25 +159,13 @@ def _safe_is_available(cls: type[CompressorBackend]) -> bool:
         return False
 
 
-def default_backend_name(*, question: bool = False) -> str:
-    """Best installed backend: ``lingua2`` when its deps are present, else ``rules``.
-
-    Args:
-        question: When ``True``, prefer an installed backend that advertises
-            :attr:`~grug.base.CompressorBackend.question_aware`. The check is on
-            the flag rather than on a name, so a question-aware backend supplied
-            by a third-party entry point is chosen too. Falls through to the
-            ordinary preference when none is installed.
+def default_backend_name() -> str:
+    """The backend a plain call gets: ``rules``, the zero-dependency default.
 
     Falls back to the first available backend of any kind, and finally to
     ``rules`` so that callers always get a usable name.
     """
     _ensure_loaded()
-    if question:
-        for name in list_backends():
-            cls = _REGISTRY[name]
-            if getattr(cls, "question_aware", False) and _safe_is_available(cls):
-                return name
     for name in _PREFERRED_ORDER:
         cls = _REGISTRY.get(name)
         if cls is not None and _safe_is_available(cls):

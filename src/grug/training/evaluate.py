@@ -63,9 +63,9 @@ def evaluate_checkpoint(
     out_file: str | Path | None = None,
 ) -> dict[str, Any]:
     """Ratio and faithfulness for one checkpoint across several rates."""
-    from ..backends.modern import ModernBackend
+    from ..backends.classifier import ClassifierBackend
 
-    backend = ModernBackend(model_name=str(model_path), device=device)
+    backend = ClassifierBackend(model_name=str(model_path), device=device)
     report = {
         "model": str(model_path),
         "documents": len(documents),
