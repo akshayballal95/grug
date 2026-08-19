@@ -29,10 +29,10 @@ DEFAULT_DATASET = "microsoft/MeetingBank-LLMCompressed"
 
 #: Where derived labels are cached. Deriving them costs ~8 minutes of CPU, which
 #: on a rented GPU is 8 minutes of paying for an idle card.
-#: v2 was rederived after the alignment fix. The original cache holds labels
-#: from the greedy scan, which disagreed with the compressions they came from
-#: on 6.2% of words and on 13.6% of negations; do not point runs at it again.
-DEFAULT_LABEL_REPO = "akshayballal/grug-meetingbank-labels-v2"
+#: Rederived after the alignment fix. The labels the greedy scan produced
+#: disagreed with the compressions they came from on 6.2% of words, and on
+#: 13.6% of negations; retraining on these gained ~0.013 f1 on every encoder.
+DEFAULT_LABEL_REPO = "akshayballal/grug-meetingbank-labels"
 
 _SHARDS = ("train.jsonl", "val.jsonl", "summary.json")
 
