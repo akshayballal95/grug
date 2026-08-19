@@ -67,36 +67,33 @@ taking it:
 ## The numbers
 
 600 questions over 694k tokens of [MeetingBank](https://huggingface.co/datasets/microsoft/MeetingBank-LLMCompressed)
-transcripts, compressed at rate 0.33, answered by Kimi K2.5, scored against
-reference answers:
+transcripts, compressed at rate 0.33, answered by Claude Sonnet 4.6, scored
+against reference answers:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/qa-quality-dark.svg">
-  <img alt="Answer quality vs tokens sent: grug rules beats the uncompressed baseline with 62% of the tokens; the grug classifier keeps F1 0.71 at 37% of tokens; LLMLingua-2 is lowest." src="docs/assets/qa-quality-light.svg">
+  <img alt="Answer quality vs tokens sent: grug rules beats the uncompressed baseline with 62% of the tokens; the grug classifier keeps F1 0.70 with 37%." src="docs/assets/qa-quality-light.svg">
 </picture>
 
-Compression only helps if the meaning survives it. Same run, scored for dropped
-negations:
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/negation-loss-dark.svg">
-  <img alt="Negations lost during compression: LLMLingua-2 drops 43%, the grug classifier 2%, grug rules none." src="docs/assets/negation-loss-light.svg">
-</picture>
+Compression only helps if the meaning survives it. Scored for dropped
+negations on the same run, neither grug backend lost a single one:
 
 | Backend | Tokens kept | Exact match | F1 | Negations lost |
 | --- | ---: | ---: | ---: | ---: |
-| original (no compression) | 100% | 0.61 | 0.76 | n/a |
-| **grug rules** | 62% | **0.62** | **0.78** | **0%** |
-| **grug classifier** (mmbert-small) | 37% | 0.58 | 0.71 | 2% |
-| LLMLingua-2 | 30% | 0.56 | 0.70 | 43% |
+| original (no compression) | 100% | 0.62 | 0.75 | n/a |
+| **grug rules** | 62% | **0.61** | **0.76** | **0%** |
+| **grug classifier** (mbert-control) | 37% | 0.58 | 0.70 | **0%** |
+| LLMLingua-2 | 30% | 0.56 | 0.69 | 43% |
 
-Two things stand out. Compressing with `grug rules` actually scored *better* than
-sending the full document, which sounds wrong until you remember that what it
-deletes is noise. And the classifier reaches a third of the tokens at the same
-answer quality as LLMLingua-2 while losing 2% of negations instead of 43%.
+Two things stand out. Compressing with `grug rules` scored *higher F1* than
+sending the full document, on 62% of the tokens -- which sounds wrong until you
+remember that what it deletes is noise. Exact match is a hair lower, 0.61
+against 0.62, so it is a wash there rather than a win. And the classifier
+reaches a third of the tokens at slightly better answer quality than
+LLMLingua-2, losing no negations where LLMLingua-2 loses 43%.
 
 Reproduce it with `grug benchmark qa`. Raw results are in
-[`benchmarks/`](benchmarks/kimi-k2.5-full/).
+[`benchmarks/`](benchmarks/sonnet46/).
 
 ## Quick start
 
@@ -129,7 +126,7 @@ result = grug.compress(
     document,
     rate=0.33,
     backend="classifier",
-    backend_kwargs={"model_name": "akshayballal/grug-mmbert-small-meetingbank"},
+    backend_kwargs={"model_name": "akshayballal/grug-mbert-control-meetingbank"},
 )
 ```
 

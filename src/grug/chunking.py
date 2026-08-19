@@ -728,14 +728,36 @@ def _pack(units: list[tuple[str, str]], max_tokens: int) -> list[tuple[str, str]
     return packed
 
 
+def _has_blank_line(text: str) -> bool:
+    return any(not line.strip() for line in text.split("\n"))
+
+
+def _drop_blank_lines(text: str) -> str:
+    return "\n".join(line for line in text.split("\n") if line.strip())
+
+
 def rejoin(chunks: list[Chunk], outputs: list[str]) -> str:
-    """Reassemble compressed chunk outputs using the recorded separators."""
+    """Reassemble compressed chunk outputs using the recorded separators.
+
+    Blank lines that compression introduced are removed. A line of pure
+    function words -- "a setting you could forget to turn on" -- can lose every
+    word it has, and an empty line is a paragraph break in Markdown, so the
+    list item it belonged to would silently split in two. Chunks are cut on
+    blank lines to begin with, so a blank line inside one did not come from the
+    source; the check is on the chunk's own text rather than a guess, and
+    verbatim chunks are left alone.
+    """
     if len(chunks) != len(outputs):
         raise ValueError(f"got {len(outputs)} outputs for {len(chunks)} chunks")
-    return "".join(
-        chunk.prefix + restore_spans(output, chunk.stash) + chunk.sep
-        for chunk, output in zip(chunks, outputs, strict=True)
-    )
+    parts = []
+    for chunk, output in zip(chunks, outputs, strict=True):
+        restored = restore_spans(output, chunk.stash)
+        if chunk.text.strip() and not restored.strip():
+            continue
+        if chunk.compressible and not _has_blank_line(chunk.text):
+            restored = _drop_blank_lines(restored)
+        parts.append(chunk.prefix + restored + chunk.sep)
+    return "".join(parts)
 
 
 def compress_document(

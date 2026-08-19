@@ -29,7 +29,6 @@ FONT = "system-ui, -apple-system, 'Segoe UI', sans-serif"
 ENTITIES = {
     "rules": ("grug rules", 0),
     "mbert-control": ("grug classifier", 1),
-    "lingua2": ("LLMLingua-2", 2),
 }
 
 THEMES = {
@@ -148,7 +147,7 @@ def quality_chart(rows: dict[str, dict], theme: dict) -> str:
     )
 
     # (dx, dy) offsets keep the labels clear of each other and the marks.
-    offsets = {"rules": (11, -16), "mbert-control": (11, -16), "lingua2": (11, 24)}
+    offsets = {"rules": (11, -16), "mbert-control": (11, 24)}
     for key, (label, slot) in ENTITIES.items():
         row = rows[key]
         x, y = px(row["ratio"] * 100), py(row["f1"])
@@ -175,7 +174,7 @@ def quality_chart(rows: dict[str, dict], theme: dict) -> str:
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" '
         f'font-family="{FONT}" role="img" aria-label="Answer quality versus tokens sent: '
         f"grug rules beats the uncompressed baseline with 62% of the tokens; the grug "
-        f'classifier keeps F1 0.70 at 37%; LLMLingua-2 sits lowest.">\n{body}\n</svg>\n'
+        f'classifier keeps F1 0.70 with 37%.">\n{body}\n</svg>\n'
     )
 
 
@@ -186,7 +185,7 @@ def negation_chart(rows: dict[str, dict], theme: dict) -> str:
     bar_h, gap = 22, 16
 
     x_max = 50.0  # percent
-    order = ["lingua2", "mbert-control", "rules"]  # most losses first
+    order = ["mbert-control", "rules"]
 
     def bx(value: float) -> float:
         return left + value / x_max * plot_w
@@ -244,7 +243,7 @@ def negation_chart(rows: dict[str, dict], theme: dict) -> str:
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" '
         f'font-family="{FONT}" role="img" aria-label="Negations lost during compression: '
-        f'LLMLingua-2 drops 43%; the grug classifier and grug rules lose none.">'
+        f'neither the grug classifier nor grug rules drops any.">'
         f"\n{body}\n</svg>\n"
     )
 
@@ -252,12 +251,27 @@ def negation_chart(rows: dict[str, dict], theme: dict) -> str:
 def main() -> None:
     rows = load_rows()
     OUT.mkdir(parents=True, exist_ok=True)
+    written = 0
     for mode, theme in THEMES.items():
         (OUT / f"qa-quality-{mode}.svg").write_text(quality_chart(rows, theme), encoding="utf-8")
-        (OUT / f"negation-loss-{mode}.svg").write_text(
-            negation_chart(rows, theme), encoding="utf-8"
-        )
-    print(f"wrote 4 charts to {OUT}")
+        written += 1
+
+    # The negation chart is a comparison, and with every plotted backend at zero
+    # it is a row of empty bars -- a chart of nothing, which reads as broken
+    # rather than as good news. Emit it only when something on it is non-zero,
+    # so it comes back on its own if a comparator is ever plotted again.
+    if any(rows[key]["negation_loss_rate"] > 0 for key in ENTITIES):
+        for mode, theme in THEMES.items():
+            (OUT / f"negation-loss-{mode}.svg").write_text(
+                negation_chart(rows, theme), encoding="utf-8"
+            )
+            written += 1
+    else:
+        for mode in THEMES:
+            (OUT / f"negation-loss-{mode}.svg").unlink(missing_ok=True)
+        print("  every plotted backend loses no negations; skipping that chart")
+
+    print(f"wrote {written} charts to {OUT}")
 
 
 if __name__ == "__main__":

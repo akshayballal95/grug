@@ -203,6 +203,39 @@ def test_rejoin_rejects_a_length_mismatch():
         rejoin(chunks, [])
 
 
+def test_a_line_emptied_by_compression_does_not_split_the_block():
+    """A blank line is a paragraph break, so an emptied line cuts a list in two.
+
+    Found on the README: the third line of a list item read "a setting you
+    could forget to turn on", every word of it droppable, and the item split
+    into two lists. Only the blank-line count moved, so it read as cosmetic.
+    """
+    source = "- first item keeps words\n  a setting you could forget\n- second item"
+    chunks = chunk_document(source)
+    assert len(chunks) == 1, "the list should be one chunk for this to test anything"
+
+    # Middle line loses every word, as a real backend would leave it.
+    emptied = "- first item keeps words\n\n- second item"
+    out = rejoin(chunks, [emptied])
+    assert "\n\n" not in out.strip(), f"compression introduced a paragraph break: {out!r}"
+    assert out.count("- ") == 2
+
+
+def test_a_blank_line_the_source_had_is_kept():
+    """Only blanks that compression introduced go; the document's own stay."""
+    chunks = chunk_document("First paragraph.\n\nSecond paragraph.")
+    out = rejoin(chunks, [c.text for c in chunks])
+    assert out.count("\n\n") == 1
+
+
+def test_a_chunk_compressed_to_nothing_takes_its_newline_with_it():
+    chunks = chunk_document("keeps this\n\nall droppable words here")
+    outputs = [c.text for c in chunks]
+    outputs[-1] = ""
+    out = rejoin(chunks, outputs)
+    assert out.strip() == "keeps this"
+
+
 def test_batching_is_used_for_multiple_chunks():
     class _Batched(_Upper):
         name = "batched-test"
