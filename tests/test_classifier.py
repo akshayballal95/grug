@@ -1,4 +1,4 @@
-"""The modern-encoder backend.
+"""The classifier backend.
 
 The pure functions run always. Anything needing weights is marked ``slow`` and
 skipped when torch is absent, so the default suite downloads nothing.
@@ -11,9 +11,9 @@ import types
 
 import pytest
 
-from grug.backends.modern import (
+from grug.backends.classifier import (
     DEFAULT_FORCE_TOKENS,
-    ModernBackend,
+    ClassifierBackend,
     _preserve_label_id,
     _windows,
     join_words,
@@ -21,8 +21,8 @@ from grug.backends.modern import (
 )
 from grug.verify import NEGATION_FORCE_TOKENS
 
-HAS_TORCH = ModernBackend.is_available()
-requires_torch = pytest.mark.skipif(not HAS_TORCH, reason="needs grug[modern]")
+HAS_TORCH = ClassifierBackend.is_available()
+requires_torch = pytest.mark.skipif(not HAS_TORCH, reason="needs grugify[classifier]")
 
 CACHED = "microsoft/llmlingua-2-bert-base-multilingual-cased-meetingbank"
 
@@ -109,7 +109,7 @@ def test_import_does_not_pull_torch():
     import sys
 
     code = (
-        "import sys, grug.backends.modern; "
+        "import sys, grug.backends.classifier; "
         "print([m for m in ('torch', 'transformers') if m in sys.modules])"
     )
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
@@ -120,14 +120,14 @@ def test_import_does_not_pull_torch():
 def test_construction_without_torch_names_the_extra():
     from grug.base import MissingDependencyError
 
-    with pytest.raises(MissingDependencyError, match=r"grug\[modern\]"):
-        ModernBackend()
+    with pytest.raises(MissingDependencyError, match=r"grugify\[classifier\]"):
+        ClassifierBackend()
 
 
 def test_is_registered():
     import grug
 
-    assert "modern" in grug.list_backends()
+    assert "classifier" in grug.list_backends()
 
 
 # -- with weights -----------------------------------------------------------
@@ -137,7 +137,7 @@ def test_is_registered():
 def backend():
     if importlib.util.find_spec("transformers") is None:
         pytest.skip("transformers not installed")
-    return ModernBackend(model_name=CACHED, device="cpu")
+    return ClassifierBackend(model_name=CACHED, device="cpu")
 
 
 @pytest.mark.slow
@@ -147,7 +147,7 @@ def test_compresses_and_tracks_the_rate(backend):
     loose = backend.compress(doc, rate=0.9)
     tight = backend.compress(doc, rate=0.3)
     assert tight.compressed_tokens < loose.compressed_tokens
-    assert tight.backend == "modern"
+    assert tight.backend == "classifier"
 
 
 @pytest.mark.slow
@@ -175,6 +175,32 @@ def test_numbers_and_negations_survive(backend):
 def test_newlines_survive(backend):
     result = backend.compress("first line here\nsecond line here", rate=0.5)
     assert "\n" in result.text
+
+
+@pytest.mark.slow
+@requires_torch
+def test_stashed_spans_survive_the_pipeline(backend):
+    """The chunker hides code and URLs behind placeholder words; dropping one
+    would silently delete the protected span it stands for."""
+    import grug
+
+    doc = (
+        "You should pass the `--dry-run` flag to the command before you ship "
+        "anything to the production environment at https://example.com/deploys."
+    )
+    result = grug.compress(doc, rate=0.15, backend=backend)
+    assert "`--dry-run`" in result.text
+    assert "https://example.com/deploys" in result.text
+
+
+@pytest.mark.slow
+@requires_torch
+def test_markdown_structure_markers_survive(backend):
+    doc = "# The Section Heading\n\n> a quoted warning sits here\n\nplain body text follows"
+    result = backend.compress(doc, rate=0.3)
+    lines = result.text.splitlines()
+    assert lines[0].startswith("#")
+    assert any(line.startswith(">") for line in lines)
 
 
 @pytest.mark.slow

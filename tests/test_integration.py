@@ -13,7 +13,7 @@ import pytest
 
 import grug
 from conftest import losses
-from grug.backends.lingua2 import Lingua2Backend
+from grug.backends.classifier import ClassifierBackend
 from grug.chunking import chunk_document
 
 CODE_BLOCK = '''```python
@@ -163,8 +163,11 @@ def test_readme_compresses_without_warnings(readme):
 
 @pytest.mark.slow
 def test_readme_structure_survives_the_classifier(readme):
-    if not Lingua2Backend.is_available():
-        pytest.skip("llmlingua not installed")
-    result = grug.compress(readme, rate=0.5, backend="lingua2")
+    if not ClassifierBackend.is_available():
+        pytest.skip("torch not installed")
+    backend = ClassifierBackend(
+        model_name="microsoft/llmlingua-2-bert-base-multilingual-cased-meetingbank", device="cpu"
+    )
+    result = grug.compress(readme, rate=0.5, backend=backend)
     assert _structure(result.text) == _structure(readme)
     assert losses(result.warnings) == [], result.warnings

@@ -1,6 +1,6 @@
 """Reproduce the compressor: corpus -> labels -> fine-tuned encoder.
 
-Everything here is behind ``pip install 'grug[train]'`` and is never imported
+Everything here is behind ``pip install 'grugify[train]'`` and is never imported
 by ``grug`` itself, so the library stays free of torch. The one exception is
 :mod:`grug.training.alignment`, which is pure Python and importable anywhere.
 

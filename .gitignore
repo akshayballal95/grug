@@ -10,4 +10,9 @@ build/
 .coverage
 htmlcov/
 *.grug.*
+!README.grug.md
 uv.lock
+
+# local experiment outputs
+/benchmarks/*.json
+.claude/

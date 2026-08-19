@@ -105,7 +105,7 @@ def load_qa(
         import datasets
     except ImportError as exc:  # pragma: no cover - guarded by the extra
         raise ImportError(
-            "grug.benchmark needs 'datasets'. Install with: pip install 'grug[bench]'"
+            "grug.benchmark needs 'datasets'. Install with: pip install 'grugify[bench]'"
         ) from exc
 
     rows = datasets.load_dataset(dataset, split=split)

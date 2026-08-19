@@ -46,7 +46,7 @@ STDIO = "-"
 
 app = typer.Typer(
     name="grug",
-    help="Shrink documents into terse caveman text so prompts cost fewer tokens.",
+    help="Shrink documents, context, and tool output into terse caveman text so LLM input costs fewer tokens.",
     no_args_is_help=True,
     add_completion=False,
 )
@@ -134,16 +134,7 @@ def compress(
     model: Annotated[
         str | None,
         typer.Option(
-            "--model", help="Checkpoint for backends that take one, e.g. --backend modern."
-        ),
-    ] = None,
-    question: Annotated[
-        str | None,
-        typer.Option(
-            "--question",
-            "-Q",
-            help="What the output must stay sufficient to answer. Selects a "
-            "question-aware backend unless -b names one.",
+            "--model", help="Checkpoint for backends that take one, e.g. --backend classifier."
         ),
     ] = None,
     verify: Annotated[
@@ -175,7 +166,7 @@ def compress(
         raise typer.Exit(EXIT_ERROR)
 
     try:
-        compressor = _build_compressor(backend, device, verify, chunk_tokens, question, model)
+        compressor = _build_compressor(backend, device, verify, chunk_tokens, model)
     except (BackendNotFoundError, MissingDependencyError, TypeError) as exc:
         _err(f"error: {exc}")
         raise typer.Exit(EXIT_ERROR) from exc
@@ -207,7 +198,7 @@ def compress(
 
         started = time.perf_counter()
         try:
-            result = compressor.compress(text, rate=rate, question=question)
+            result = compressor.compress(text, rate=rate)
         except Exception as exc:  # a backend blowing up is a per-file failure
             _err(f"error: {source}: {exc}")
             had_error = True
@@ -244,13 +235,12 @@ def _build_compressor(
     device: str | None,
     verify: bool,
     chunk_tokens: int,
-    question: str | None = None,
     model: str | None = None,
 ) -> Any:
-    """Resolve the backend and wrap it. A question only steers an unnamed one."""
+    """Resolve the backend and wrap it."""
     from . import Compressor
 
-    name = backend or default_backend_name(question=bool(question))
+    name = backend or default_backend_name()
     kwargs: dict[str, Any] = {}
     if device is not None:
         kwargs["device"] = device
@@ -355,7 +345,7 @@ def backends(
 
     width = max((len(row["name"]) for row in info), default=4)
     for row in info:
-        status = "ready" if row["available"] else f"needs: pip install 'grug[{row['extra']}]'"
+        status = "ready" if row["available"] else f"needs: pip install 'grugify[{row['extra']}]'"
         marker = "*" if row["name"] == default else " "
         print(f"{marker} {row['name']:<{width}}  {status:<38}  {row['description']}")
     print(f"\n* = default backend. Token counts use {_tokenizer_note()}.")
@@ -384,7 +374,7 @@ def _training(module: str) -> Any:
     try:
         return importlib.import_module(f"grug.training.{module}")
     except ImportError as exc:
-        _err(f"error: grug train needs the training extra: pip install 'grug[train]'  ({exc})")
+        _err(f"error: grug train needs the training extra: pip install 'grugify[train]'  ({exc})")
         raise typer.Exit(EXIT_ERROR) from exc
 
 
@@ -487,7 +477,7 @@ def train_generate(
     try:
         import datasets
     except ImportError as exc:
-        _err("error: needs 'datasets': pip install 'grug[train]'")
+        _err("error: needs 'datasets': pip install 'grugify[train]'")
         raise typer.Exit(EXIT_ERROR) from exc
 
     rows = datasets.load_dataset(dataset, split="train")
@@ -719,23 +709,23 @@ def _benchmark(module: str) -> Any:
     try:
         return importlib.import_module(f"grug.benchmark.{module}")
     except ImportError as exc:
-        _err(f"error: grug benchmark needs: pip install 'grug[bench]'  ({exc})")
+        _err(f"error: grug benchmark needs: pip install 'grugify[bench]'  ({exc})")
         raise typer.Exit(EXIT_ERROR) from exc
 
 
 def _make_backend(spec: str) -> tuple[str, Any]:
-    """``rules`` or ``modern:hub/model-id`` -> (display name, backend)."""
+    """``rules`` or ``classifier:hub/model-id`` -> (display name, backend)."""
     name, _, model_id = spec.partition(":")
     if not model_id:
         return name, create_backend(name)
-    from .backends.modern import ModernBackend
+    from .backends.classifier import ClassifierBackend
 
     label = model_id.split("/")[-1]
     for prefix in ("grug-",):
         label = label.removeprefix(prefix)
     for suffix in ("-meetingbank",):
         label = label.removesuffix(suffix)
-    return label, ModernBackend(model_name=model_id, device="cpu")
+    return label, ClassifierBackend(model_name=model_id, device="cpu")
 
 
 @bench_app.command("qa")
@@ -746,8 +736,8 @@ def benchmark_qa(
     ],
     backends: Annotated[
         str,
-        typer.Option("--backends", "-b", help="Comma list. 'rules', 'lingua2', 'modern:hub/id'."),
-    ] = "rules,lingua2",
+        typer.Option("--backends", "-b", help="Comma list. 'rules', 'classifier:hub/id'."),
+    ] = "rules",
     rates: Annotated[str, typer.Option("--rates", help="Comma list of rates.")] = "0.5,0.33",
     limit: Annotated[int, typer.Option("--limit", min=1, help="Contexts to evaluate.")] = 25,
     out: Annotated[str, typer.Option("--out", "-o", help="Directory for results.")] = "benchmarks",

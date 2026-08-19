@@ -139,7 +139,7 @@ def test_require_available_raises_for_an_unavailable_backend():
         def is_available(cls):
             return False
 
-    with pytest.raises(MissingDependencyError, match=r"pip install 'grug\[someextra\]'"):
+    with pytest.raises(MissingDependencyError, match=r"pip install 'grugify\[someextra\]'"):
         _Unavailable.require_available()
 
 

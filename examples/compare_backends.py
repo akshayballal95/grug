@@ -4,13 +4,9 @@
     python examples/compare_backends.py
     python examples/compare_backends.py --rates 0.7 0.5 0.3
 
-Backends whose dependencies are missing are listed as unavailable and skipped,
-so this runs on a bare `pip install grug` and gets richer as you add extras.
-
-Question-aware backends sit out by default: there is no question in this
-comparison for them to condition on, which is the only thing they do better,
-and they are the slowest and largest to download. Pass --with-question to give
-them one and include them.
+Backends whose dependencies are missing, or that need a checkpoint, are listed
+and skipped, so this runs on a bare `pip install grugify` and gets richer as
+you add extras. Pass --model to include the classifier backend.
 """
 
 from __future__ import annotations
@@ -28,21 +24,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--rates", type=float, nargs="+", default=[0.8, 0.5, 0.3])
     parser.add_argument("--device", default="auto", help="device for backends that use one")
     parser.add_argument(
-        "--with-question",
-        metavar="TEXT",
-        help="condition question-aware backends on TEXT and include them in the table",
+        "--model",
+        metavar="CHECKPOINT",
+        help="checkpoint for the classifier backend; without it the classifier sits out",
     )
     return parser.parse_args()
 
 
-def build(name: str, device: str) -> grug.Compressor | None:
+def build(name: str, device: str, model: str | None) -> grug.Compressor | None:
     """Construct a Compressor, or return None if the backend cannot run here."""
-    try:
-        return grug.Compressor(backend=name, device=device)
-    except TypeError:
-        return grug.Compressor(backend=name)  # backend takes no device
-    except grug.MissingDependencyError:
-        return None
+    for kwargs in ({"device": device, "model_name": model}, {"device": device}, {}):
+        try:
+            return grug.Compressor(backend=name, **{k: v for k, v in kwargs.items() if v})
+        except grug.MissingDependencyError:
+            return None
+        except TypeError:
+            continue  # backend does not take these options; try fewer
+    return None
 
 
 def main() -> int:
@@ -53,7 +51,7 @@ def main() -> int:
     rule("Backends")
     for row in grug.backend_info():
         if not row["available"]:
-            status = f"missing -> pip install 'grug[{row['extra']}]'"
+            status = f"missing -> pip install 'grugify[{row['extra']}]'"
         elif row["requires_configuration"]:
             status = "available, needs --model"
         else:
@@ -67,22 +65,19 @@ def main() -> int:
     print("  " + "-" * (len(header) - 2))
 
     for name in grug.list_backends():
-        if getattr(grug.get_backend_class(name), "requires_configuration", False):
-            print(f"  {name:<10} {'-':>5} {'-':>8} {'-':>7} {'-':>7}  needs an explicit model")
+        needs_model = getattr(grug.get_backend_class(name), "requires_configuration", False)
+        if needs_model and not args.model:
+            print(f"  {name:<10} {'-':>5} {'-':>8} {'-':>7} {'-':>7}  pass --model to include it")
             continue
-        if grug.get_backend_class(name).question_aware and not args.with_question:
-            print(
-                f"  {name:<10} {'-':>5} {'-':>8} {'-':>7} {'-':>7}  skipped, pass --with-question"
-            )
-            continue
-        comp = build(name, args.device)
+        comp = build(name, args.device, args.model)
         if comp is None:
-            print(f"  {name:<10} {'-':>5} {'-':>8} {'-':>7} {'-':>7}  dependencies not installed")
+            note = "missing dependencies, or needs a checkpoint (pass --model)"
+            print(f"  {name:<10} {'-':>5} {'-':>8} {'-':>7} {'-':>7}  {note}")
             continue
         comp.compress("warm up", rate=0.5)  # keep model-load time out of the timings
         for rate in args.rates:
             started = time.perf_counter()
-            result = comp.compress(doc, rate=rate, question=args.with_question)
+            result = comp.compress(doc, rate=rate)
             elapsed = time.perf_counter() - started
             note = "clean" if not result.warnings else f"{len(result.warnings)} WARN"
             print(

@@ -29,7 +29,7 @@ class MissingDependencyError(ImportError):
         self.missing = missing
         super().__init__(
             f"The {backend!r} backend requires {missing!r}, which is not installed. "
-            f"Install it with:  pip install 'grug[{extra}]'"
+            f"Install it with:  pip install 'grugify[{extra}]'"
         )
 
 
@@ -125,7 +125,7 @@ class CompressorBackend(ABC):
     reflect what actually came out.
     """
 
-    #: Registry key, e.g. ``"lingua2"``. Subclasses must set this.
+    #: Registry key, e.g. ``"rules"``. Subclasses must set this.
     name: str = ""
 
     #: Human-readable one-liner, surfaced by ``grug backends``.
@@ -143,10 +143,6 @@ class CompressorBackend(ABC):
     #: free to ignore it -- so they are rejected there and routed through
     #: ``backend_kwargs`` instead. Extend this in a subclass that adds more.
     construction_only: tuple[str, ...] = ("device", "model_name")
-
-    #: ``True`` when ``compress`` conditions on a ``question`` kwarg. Routing
-    #: keys on this, so it stays ``False`` unless a backend really uses it.
-    question_aware: bool = False
 
     #: ``True`` when the backend cannot be constructed without arguments -- it
     #: has no sensible default model. ``is_available`` still reports whether the

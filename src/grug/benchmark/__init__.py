@@ -2,7 +2,7 @@
 
     grug benchmark qa --model bedrock/<model-id> --limit 25
 
-Behind ``pip install 'grug[bench]'``. Never imported by ``grug`` itself.
+Behind ``pip install 'grugify[bench]'``. Never imported by ``grug`` itself.
 """
 
 from __future__ import annotations

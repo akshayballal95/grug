@@ -5,7 +5,7 @@
     python scripts/runpod_train.py --repo <user>/grug-modernbert --dry-run
     python scripts/runpod_train.py --repo <user>/grug-modernbert --go
 
-The pod clones this repository, installs ``grug[train]``, prepares the corpus,
+The pod clones this repository, installs the ``train`` extra, prepares the corpus,
 trains, pushes the checkpoint, and then terminates itself -- so a crashed run
 costs minutes, not the rest of the day. Nothing is created without ``--go``.
 """
@@ -261,8 +261,8 @@ card = [
     "Binary preserve/discard token classifier for prompt compression, trained with",
     "`grug train` on `microsoft/MeetingBank-LLMCompressed`.", "",
     "```python", "import grug",
-    "from grug.backends.modern import ModernBackend", "",
-    "comp = grug.Compressor(ModernBackend(model_name=" + repr(repo) + "))",
+    "from grug.backends.classifier import ClassifierBackend", "",
+    "comp = grug.Compressor(ClassifierBackend(model_name=" + repr(repo) + "))",
     "result = comp.compress(text, rate=0.4)", "```", "",
     "## Training", "", "```json", json.dumps(metrics["config"], indent=2), "```", "",
     "## Final epoch", "", "```json", json.dumps(last, indent=2), "```", "",

@@ -83,7 +83,7 @@ class LLMClient:
             import litellm
         except ImportError as exc:  # pragma: no cover - guarded by the extra
             raise ImportError(
-                "grug.benchmark needs 'litellm'. Install with: pip install 'grug[bench]'"
+                "grug.benchmark needs 'litellm'. Install with: pip install 'grugify[bench]'"
             ) from exc
         litellm.drop_params = True
         self._litellm = litellm
