@@ -25,6 +25,8 @@ REPO_URL = "https://github.com/akshayballal95/grug.git"
 #: makes transformers report "PyTorch not found" even though it is installed.
 DEFAULT_IMAGE = "runpod/pytorch:1.1.0-rc.154-cu1290-torch280-ubuntu2204"
 #: ModernBERT-base at seq 512 needs well under this; more VRAM buys bigger batches.
+#: Floor for the small encoders. ModernBERT-base at batch 32 needs more than
+#: a 20GB card gives; --min-vram raises it per run.
 MIN_VRAM_GB = 16
 
 
@@ -57,6 +59,12 @@ def parse_args() -> argparse.Namespace:
         "--gpu", default=None, help="Exact GPU type id. Default: cheapest with enough VRAM."
     )
     p.add_argument("--max-price", type=float, default=0.60, help="Refuse GPUs above this $/hr.")
+    p.add_argument(
+        "--min-vram",
+        type=int,
+        default=MIN_VRAM_GB,
+        help="Skip GPUs with less VRAM than this. Raise it for the bigger encoders.",
+    )
     p.add_argument("--image", default=DEFAULT_IMAGE)
     p.add_argument("--private", action="store_true", help="Create the Hub repo private.")
     p.add_argument(
@@ -94,7 +102,8 @@ def pick_gpu(runpod, args) -> list[dict]:
 
     ``get_gpus()`` carries no pricing, so each candidate needs its own lookup.
     """
-    candidates = [g for g in runpod.get_gpus() if (g.get("memoryInGb") or 0) >= MIN_VRAM_GB]
+    floor = getattr(args, "min_vram", MIN_VRAM_GB)
+    candidates = [g for g in runpod.get_gpus() if (g.get("memoryInGb") or 0) >= floor]
     priced = []
     for gpu in candidates:
         try:
@@ -116,10 +125,10 @@ def pick_gpu(runpod, args) -> list[dict]:
     if args.gpu:
         priced = [g for g in priced if g["id"] == args.gpu]
         if not priced:
-            sys.exit(f"error: --gpu {args.gpu!r} not available with >={MIN_VRAM_GB}GB")
+            sys.exit(f"error: --gpu {args.gpu!r} not available with >={floor}GB")
     priced = [g for g in priced if g["price"] <= args.max_price]
     if not priced:
-        sys.exit(f"error: nothing with >={MIN_VRAM_GB}GB under ${args.max_price}/hr")
+        sys.exit(f"error: nothing with >={floor}GB under ${args.max_price}/hr")
 
     print(f"  affordable with >={MIN_VRAM_GB}GB:")
     for gpu in priced[:8]:
