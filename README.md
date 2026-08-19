@@ -85,12 +85,13 @@ negations on the same run, neither grug backend lost a single one:
 | **grug classifier** (mbert-control) | 37% | 0.58 | 0.70 | **0%** |
 | LLMLingua-2 | 30% | 0.56 | 0.69 | 43% |
 
-Two things stand out. Compressing with `grug rules` scored *higher F1* than
-sending the full document, on 62% of the tokens -- which sounds wrong until you
-remember that what it deletes is noise. Exact match is a hair lower, 0.61
-against 0.62, so it is a wash there rather than a win. And the classifier
-reaches a third of the tokens at slightly better answer quality than
-LLMLingua-2, losing no negations where LLMLingua-2 loses 43%.
+`grug rules` keeps 62% of the tokens and answers about as well as the full
+document: 0.76 F1 against 0.75, 0.61 exact match against 0.62. Both gaps are
+0.01, inside the standard error on 600 questions.
+
+The classifier spends some of that quality on a smaller prompt: 37% of the
+tokens for 0.70 F1. At a comparable size it answers slightly better than
+LLMLingua-2, and keeps every negation where LLMLingua-2 drops 43% of them.
 
 Reproduce it with `grug benchmark qa`. Raw results are in
 [`benchmarks/`](https://github.com/akshayballal95/grug/tree/main/benchmarks/sonnet46/).
