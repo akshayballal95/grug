@@ -14,7 +14,7 @@ pairs = [json.loads(x) for x in (d / "pairs.jsonl").read_text().splitlines() if 
 labels = [json.loads(x) for x in (d / "labels.jsonl").read_text().splitlines() if x.strip()]
 
 rows = []
-for p, x in zip(pairs, labels):
+for p, x in zip(pairs, labels, strict=True):
     n = len(x["labels"])
     out_words = len(p["compressed"].split())
     kept = sum(x["labels"])

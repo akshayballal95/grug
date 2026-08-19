@@ -62,7 +62,7 @@ print(
 
 degenerate = [
     i
-    for i, (p, r) in enumerate(zip(pairs, ratios))
+    for i, (p, r) in enumerate(zip(pairs, ratios, strict=True))
     if r < 0.05 or r > 0.95 or not p["compressed"].strip()
 ]
 print(f"degenerate documents (kept <5% or >95%): {len(degenerate)}")
@@ -76,12 +76,12 @@ try:
             type(
                 "S",
                 (),
-                dict(
-                    variation_rate=x["variation_rate"],
-                    alignment_gap=x["alignment_gap"],
-                    words=[],
-                    labels=x["labels"],
-                ),
+                {
+                    "variation_rate": x["variation_rate"],
+                    "alignment_gap": x["alignment_gap"],
+                    "words": [],
+                    "labels": x["labels"],
+                },
             )()
             for x in labels
         ]

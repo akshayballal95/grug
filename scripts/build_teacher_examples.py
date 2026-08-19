@@ -8,10 +8,24 @@ data = json.loads(
 
 # Scored on 12 passages x 3 samples, negation prompt, occurrence-counted metric.
 SCORES = {
-    "Gemini 3.7 Flash": dict(ratio=0.25, vr=0.001, ag=0.004, neg=0.82, num=0.74, order=0.19),
-    "Sonnet 4.6": dict(ratio=0.47, vr=0.004, ag=0.082, neg=0.74, num=0.90, order=0.39),
-    "Haiku 4.5": dict(ratio=0.54, vr=0.009, ag=0.078, neg=0.76, num=0.91, order=0.44),
-    "Kimi K2.5": dict(ratio=0.65, vr=0.001, ag=0.045, neg=0.79, num=0.91, order=0.27),
+    "Gemini 3.7 Flash": {
+        "ratio": 0.25,
+        "vr": 0.001,
+        "ag": 0.004,
+        "neg": 0.82,
+        "num": 0.74,
+        "order": 0.19,
+    },
+    "Sonnet 4.6": {
+        "ratio": 0.47,
+        "vr": 0.004,
+        "ag": 0.082,
+        "neg": 0.74,
+        "num": 0.90,
+        "order": 0.39,
+    },
+    "Haiku 4.5": {"ratio": 0.54, "vr": 0.009, "ag": 0.078, "neg": 0.76, "num": 0.91, "order": 0.44},
+    "Kimi K2.5": {"ratio": 0.65, "vr": 0.001, "ag": 0.045, "neg": 0.79, "num": 0.91, "order": 0.27},
 }
 SLUG = {
     "Gemini 3.7 Flash": "gemini",
@@ -29,7 +43,7 @@ CAPTION = {
 
 def markup(words, labels):
     out = []
-    for w, keep in zip(words, labels):
+    for w, keep in zip(words, labels, strict=True):
         cls = "k" if keep else "d"
         out.append(f'<span class="{cls}">{html.escape(w)}</span>')
     return " ".join(out)

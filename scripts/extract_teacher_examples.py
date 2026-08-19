@@ -1,18 +1,24 @@
 """Build the comparison data using the real aligner the training pipeline uses."""
 
 import json
-import pathlib
 import re
+from pathlib import Path
 
 from grug.training.alignment import annotate, split_words
 from grug.training.distill import _retention, strip_envelope
 
-root = pathlib.Path(
+
+def read_json(path):
+    """Read one JSON file. A helper so each call site is a single expression."""
+    return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+root = Path(
     "/Users/akshayballal/Developer/Projects/Starlight/grug"
     "/.claude/worktrees/negation-metric-fix/benchmarks"
 )
-main = json.load(open(root / "teachers-corrected-metric.json"))
-son = json.load(open(root / "teachers-corrected-metric-sonnet.json"))
+main = read_json(root / "teachers-corrected-metric.json")
+son = read_json(root / "teachers-corrected-metric-sonnet.json")
 
 TOP = {}
 for t in main["teachers"]:
@@ -75,7 +81,7 @@ for idx in PICK:
         )
     out["passages"].append(entry)
 
-dest = pathlib.Path("/Users/akshayballal/.claude/jobs/c7968b33/tmp/examples.json")
+dest = Path("/Users/akshayballal/.claude/jobs/c7968b33/tmp/examples.json")
 dest.write_text(json.dumps(out))
 
 print("corpus-wide (12 passages):")
