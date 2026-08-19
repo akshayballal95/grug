@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 230" role="img" aria-label="grug: make text small, keep meaning">
+  <g transform="translate(183, 0)">
+    <g transform="translate(0, 34)">
+      <path d="M 52 10 L 82 12 Q 89 13 93 19 L 108 38 L 101 46 L 112 56 Q 115 61 114 66 L 107 94 Q 106 100 101 104 L 78 118 Q 73 121 67 120 L 37 114 Q 31 113 28 108 L 13 82 Q 10 77 11 71 L 18 38 Q 19 31 25 27 L 45 12 Q 48 10 52 10 Z" fill="#B0532C"/>
+      <g transform="rotate(-2 64 64)">
+        <rect x="35" y="42" width="56" height="11" rx="5.5" fill="#FFF3E2"/>
+        <rect x="35" y="61" width="40" height="11" rx="5.5" fill="#FFF3E2"/>
+        <rect x="35" y="80" width="24" height="11" rx="5.5" fill="#FFF3E2"/>
+      </g>
+    </g>
+    <g fill="none" stroke="#22262b" stroke-width="19" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="187" cy="95" r="21.5"/>
+      <path d="M 208.5 68 V 136 Q 208.5 152 188 152 Q 175 152 170 145"/>
+      <path d="M 240 66 V 126 M 240 94 Q 240 66 267 66"/>
+      <path d="M 293 66 V 102 Q 293 126 316 126 Q 339 126 339 102 V 66 M 339 100 V 126"/>
+      <circle cx="393" cy="95" r="21.5"/>
+      <path d="M 414.5 68 V 136 Q 414.5 152 394 152 Q 381 152 376 145"/>
+    </g>
+  </g>
+  <text x="400" y="207" text-anchor="middle" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="17" font-weight="500" letter-spacing="0.3" fill="#6a6f75">grug make text small. grug keep meaning.</text>
+</svg>

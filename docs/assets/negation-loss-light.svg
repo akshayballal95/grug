@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 240" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" role="img" aria-label="Negations lost during compression: LLMLingua-2 drops 43%; the grug classifier and grug rules lose none.">
+<rect width="760" height="240" rx="8" fill="#fcfcfb"/>
+<text x="24.0" y="34.0" font-size="16" fill="#0b0b0b" font-weight="700">Negations lost during compression</text>
+<text x="24.0" y="54.0" font-size="11.5" fill="#52514e">share of load-bearing negations dropped at rate 0.33 · lower is better · losing one flips the meaning</text>
+<line x1="258.0" y1="72" x2="258.0" y2="206" stroke="#e1e0d9" stroke-width="1"/>
+<text x="258.0" y="222.0" font-size="10.5" fill="#898781" text-anchor="middle">10%</text>
+<line x1="366.0" y1="72" x2="366.0" y2="206" stroke="#e1e0d9" stroke-width="1"/>
+<text x="366.0" y="222.0" font-size="10.5" fill="#898781" text-anchor="middle">20%</text>
+<line x1="474.0" y1="72" x2="474.0" y2="206" stroke="#e1e0d9" stroke-width="1"/>
+<text x="474.0" y="222.0" font-size="10.5" fill="#898781" text-anchor="middle">30%</text>
+<line x1="582.0" y1="72" x2="582.0" y2="206" stroke="#e1e0d9" stroke-width="1"/>
+<text x="582.0" y="222.0" font-size="10.5" fill="#898781" text-anchor="middle">40%</text>
+<line x1="690.0" y1="72" x2="690.0" y2="206" stroke="#e1e0d9" stroke-width="1"/>
+<text x="690.0" y="222.0" font-size="10.5" fill="#898781" text-anchor="middle">50%</text>
+<line x1="150" y1="72" x2="150" y2="206" stroke="#c3c2b7" stroke-width="1"/>
+<text x="140.0" y="93.0" font-size="12.5" fill="#52514e" text-anchor="end">LLMLingua-2</text>
+<path d="M 150,78 H 610.4 Q 614.4,78 614.4,82 V 96 Q 614.4,100 610.4,100 H 150 Z" fill="#1baf7a"/>
+<text x="622.4" y="93.0" font-size="12.5" fill="#0b0b0b" font-weight="600">43%</text>
+<text x="140.0" y="131.0" font-size="12.5" fill="#52514e" text-anchor="end">grug classifier</text>
+<text x="158.0" y="131.0" font-size="12.5" fill="#0b0b0b" font-weight="600">0%</text>
+<text x="140.0" y="169.0" font-size="12.5" fill="#52514e" text-anchor="end">grug rules</text>
+<text x="158.0" y="169.0" font-size="12.5" fill="#0b0b0b" font-weight="600">0%</text>
+</svg>
