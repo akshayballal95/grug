@@ -16,3 +16,6 @@ uv.lock
 # local experiment outputs
 /benchmarks/*.json
 .claude/
+
+# one-off scripts kept locally, not part of the project
+/scripts/archive/
