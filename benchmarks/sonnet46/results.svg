@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="420" viewBox="0 0 720 420" font-family="system-ui,sans-serif">
+<rect width="720" height="420" fill="#ffffff"/>
+<text x="64" y="36" font-size="17" font-weight="600">QA accuracy vs compression</text>
+<text x="64" y="54" font-size="12" fill="#666">x: achieved ratio (lower = more compression) &#183; y: exact_match</text>
+<line x1="64" y1="356" x2="656" y2="356" stroke="#ccc"/>
+<line x1="64" y1="64" x2="64" y2="356" stroke="#ccc"/>
+<line x1="64.0" y1="64" x2="64.0" y2="356" stroke="#f1f3f5"/>
+<text x="64.0" y="374" font-size="11" fill="#666" text-anchor="middle">0.00</text>
+<line x1="212.0" y1="64" x2="212.0" y2="356" stroke="#f1f3f5"/>
+<text x="212.0" y="374" font-size="11" fill="#666" text-anchor="middle">0.25</text>
+<line x1="360.0" y1="64" x2="360.0" y2="356" stroke="#f1f3f5"/>
+<text x="360.0" y="374" font-size="11" fill="#666" text-anchor="middle">0.50</text>
+<line x1="508.0" y1="64" x2="508.0" y2="356" stroke="#f1f3f5"/>
+<text x="508.0" y="374" font-size="11" fill="#666" text-anchor="middle">0.75</text>
+<line x1="656.0" y1="64" x2="656.0" y2="356" stroke="#f1f3f5"/>
+<text x="656.0" y="374" font-size="11" fill="#666" text-anchor="middle">1.00</text>
+<line x1="64" y1="356.0" x2="656" y2="356.0" stroke="#f1f3f5"/>
+<text x="56" y="360.0" font-size="11" fill="#666" text-anchor="end">0.00</text>
+<line x1="64" y1="283.0" x2="656" y2="283.0" stroke="#f1f3f5"/>
+<text x="56" y="287.0" font-size="11" fill="#666" text-anchor="end">0.18</text>
+<line x1="64" y1="210.0" x2="656" y2="210.0" stroke="#f1f3f5"/>
+<text x="56" y="214.0" font-size="11" fill="#666" text-anchor="end">0.36</text>
+<line x1="64" y1="136.99999999999997" x2="656" y2="136.99999999999997" stroke="#f1f3f5"/>
+<text x="56" y="140.99999999999997" font-size="11" fill="#666" text-anchor="end">0.54</text>
+<line x1="64" y1="64.0" x2="656" y2="64.0" stroke="#f1f3f5"/>
+<text x="56" y="68.0" font-size="11" fill="#666" text-anchor="end">0.71</text>
+<line x1="64" y1="102.0869565217391" x2="656" y2="102.0869565217391" stroke="#adb5bd" stroke-dasharray="6 4"/>
+<text x="656" y="96.0869565217391" font-size="11" fill="#868e96" text-anchor="end">uncompressed (0.622)</text>
+<circle cx="430.7" cy="106.2" r="6" fill="#4c6ef5" opacity="0.9"/>
+<text x="430.7" y="95.2" font-size="10" fill="#495057" text-anchor="middle">0.33</text>
+<circle cx="238.7" cy="127.3" r="6" fill="#f59f00" opacity="0.9"/>
+<text x="238.7" y="116.3" font-size="10" fill="#495057" text-anchor="middle">0.33</text>
+<circle cx="283.8" cy="125.2" r="6" fill="#12b886" opacity="0.9"/>
+<text x="283.8" y="114.2" font-size="10" fill="#495057" text-anchor="middle">0.33</text>
+<circle cx="283.5" cy="122.5" r="6" fill="#e64980" opacity="0.9"/>
+<text x="283.5" y="111.5" font-size="10" fill="#495057" text-anchor="middle">0.33</text>
+<circle cx="284.3" cy="127.3" r="6" fill="#7950f2" opacity="0.9"/>
+<text x="284.3" y="116.3" font-size="10" fill="#495057" text-anchor="middle">0.33</text>
+<circle cx="284.4" cy="120.5" r="6" fill="#868e96" opacity="0.9"/>
+<text x="284.4" y="109.5" font-size="10" fill="#495057" text-anchor="middle">0.33</text>
+<circle cx="506" cy="66" r="5" fill="#4c6ef5"/>
+<text x="518" y="70" font-size="12" fill="#343a40">rules</text>
+<circle cx="506" cy="84" r="5" fill="#f59f00"/>
+<text x="518" y="88" font-size="12" fill="#343a40">lingua2</text>
+<circle cx="506" cy="102" r="5" fill="#12b886"/>
+<text x="518" y="106" font-size="12" fill="#343a40">ettin-32m</text>
+<circle cx="506" cy="120" r="5" fill="#e64980"/>
+<text x="518" y="124" font-size="12" fill="#343a40">ettin-68m</text>
+<circle cx="506" cy="138" r="5" fill="#7950f2"/>
+<text x="518" y="142" font-size="12" fill="#343a40">mmbert-small</text>
+<circle cx="506" cy="156" r="5" fill="#868e96"/>
+<text x="518" y="160" font-size="12" fill="#343a40">mbert-control</text>
+</svg>
