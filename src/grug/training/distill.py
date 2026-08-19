@@ -14,6 +14,7 @@ fidelity and consistency separately.
 from __future__ import annotations
 
 import statistics
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -133,20 +134,32 @@ def _out_of_order_fraction(original: list[str], compressed: list[str]) -> float:
     return 1.0 - matched / len(wanted)
 
 
-def _retention(original: str, compressed: str, kind: str) -> float | None:
-    """Fraction of the original's negations (or numbers) still present."""
-    if kind == "negation":
-        wanted = [w for w in split_words(original) if is_negation(w.strip(".,;:!?").lower())]
-        kept = {w.strip(".,;:!?").lower() for w in split_words(compressed)}
-        if not wanted:
-            return None
-        return sum(1 for w in wanted if w.strip(".,;:!?").lower() in kept) / len(wanted)
+def _norm(word: str) -> str:
+    return word.strip(".,;:!?").lower()
 
-    wanted_numbers = find_numbers(original)
-    if not wanted_numbers:
+
+def _retention(original: str, compressed: str, kind: str) -> float | None:
+    """Fraction of the original's negation (or number) *occurrences* still present.
+
+    Counted as a multiset, not a set. A passage that says "not" eight times and
+    keeps it once has retained one eighth of its negations, not all of them --
+    but a set-membership test scores that 1.00, because the word "not" is still
+    somewhere in the output. That is the difference between a teacher that
+    preserves meaning and one that preserves vocabulary.
+    """
+    if kind == "negation":
+        wanted = Counter(
+            w for w in (_norm(x) for x in split_words(original)) if is_negation(w)
+        )
+        have = Counter(_norm(w) for w in split_words(compressed))
+    else:
+        wanted = Counter(find_numbers(original))
+        have = Counter(find_numbers(compressed))
+
+    total = sum(wanted.values())
+    if not total:
         return None
-    present = find_numbers(compressed)
-    return sum(1 for n in wanted_numbers if present.get(n, 0) > 0) / len(wanted_numbers)
+    return sum(min(n, have.get(w, 0)) for w, n in wanted.items()) / total
 
 
 def score_teacher(model: str, originals: list[str], samples: list[list[str]]) -> TeacherScore:

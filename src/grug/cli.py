@@ -538,6 +538,9 @@ def train_distill(
             label = model.split("/")[-1] + (f" [{variant}]" if len(variants) > 1 else "")
             score = distill.score_teacher(label, passages, grouped)
             score.metadata["instruction"] = variant
+            # Keep the raw compressions: re-scoring after a metric change should
+            # not mean paying for every API call a second time.
+            score.metadata["outputs"] = grouped
             results.append(score)
             _err("  " + score.summary())
 
@@ -545,7 +548,8 @@ def train_distill(
         from dataclasses import asdict
 
         Path(out).parent.mkdir(parents=True, exist_ok=True)
-        Path(out).write_text(json.dumps([asdict(r) for r in results], indent=2), encoding="utf-8")
+        payload = {"passages": passages, "teachers": [asdict(r) for r in results]}
+        Path(out).write_text(json.dumps(payload, indent=2), encoding="utf-8")
         _err(f"wrote {out}")
     json.dump([r.__dict__ for r in results], sys.stdout, indent=2, default=str)
     sys.stdout.write("\n")

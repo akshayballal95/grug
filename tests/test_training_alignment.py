@@ -164,3 +164,32 @@ def test_the_papers_worked_example():
         assert token in survivors
     assert "Victory" not in survivors
     assert 0.2 < stats.keep_ratio < 0.6
+
+
+def test_negation_retention_counts_occurrences_not_vocabulary():
+    """Keeping the word "not" once does not retain eight separate negations.
+
+    A set-membership test scored this 1.00, which let a teacher that dropped
+    most of a passage's negations look perfectly faithful.
+    """
+    from grug.training.distill import _retention
+
+    original = "It is not fair, not right, not legal, and not wise."
+    kept_one = "It is not fair, right, legal, wise."
+
+    assert _retention(original, original, "negation") == 1.0
+    assert _retention(original, kept_one, "negation") == 0.25
+
+
+def test_number_retention_counts_repeats():
+    from grug.training.distill import _retention
+
+    original = "3 apples, 3 pears, 12 plums."
+    assert _retention(original, "3 apples, pears, 12 plums.", "number") == 2 / 3
+
+
+def test_retention_is_none_without_anything_to_retain():
+    from grug.training.distill import _retention
+
+    assert _retention("plain text here", "plain text", "negation") is None
+    assert _retention("plain text here", "plain text", "number") is None
