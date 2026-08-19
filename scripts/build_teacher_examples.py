@@ -45,9 +45,7 @@ for p in data["passages"]:
         negcls = " warn" if (m["negation"] is not None and m["negation"] < 1) else ""
         notes = []
         if m["envelope"]:
-            notes.append(
-                f'<span class="flag">added a title</span> {html.escape(m["envelope"])}'
-            )
+            notes.append(f'<span class="flag">added a title</span> {html.escape(m["envelope"])}')
         if m["novel"]:
             joined = ", ".join(html.escape(w) for w in m["novel"])
             notes.append(f'<span class="flag">not in source</span> {joined}')

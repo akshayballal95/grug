@@ -48,9 +48,7 @@ for name in ORDER:
         novel_all += sum(1 for w in toks(clean) if w not in vocab)
         kept_all += len(clean.split())
         src_all += len(src.split())
-    out["totals"].append(
-        {"name": name, "novel": novel_all, "ratio": kept_all / src_all}
-    )
+    out["totals"].append({"name": name, "novel": novel_all, "ratio": kept_all / src_all})
 
 for idx in PICK:
     src = main["passages"][idx]

@@ -39,7 +39,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--model", default="answerdotai/ModernBERT-base")
     p.add_argument(
         "--labels",
-        default="akshayballal/grug-meetingbank-labels",
+        default="akshayballal/grug-meetingbank-labels-v2",
         help="Cached label dataset; the pod falls back to deriving if it is missing.",
     )
     p.add_argument("--epochs", type=int, default=10)

@@ -20,7 +20,9 @@ for p, x in zip(pairs, labels):
     kept = sum(x["labels"])
     rows.append((n, out_words / max(1, n), kept / max(1, n), out_words, kept))
 
-print(f"{'source words':>13} {'docs':>5} {'teacher ratio':>14} {'label ratio':>12} {'shortfall':>10}")
+print(
+    f"{'source words':>13} {'docs':>5} {'teacher ratio':>14} {'label ratio':>12} {'shortfall':>10}"
+)
 print("-" * 60)
 buckets = [(0, 1000), (1000, 2500), (2500, 5000), (5000, 10000), (10000, 20000), (20000, 10**9)]
 for lo, hi in buckets:

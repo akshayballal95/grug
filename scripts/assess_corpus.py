@@ -41,15 +41,29 @@ print(
 )
 print(f"document length: median {pct(lens, 0.5)} words, max {max(lens)}\n")
 
-neg = [r for r in (_retention(p["original"], p["compressed"], "negation") for p in pairs) if r is not None]
-num = [r for r in (_retention(p["original"], p["compressed"], "number") for p in pairs) if r is not None]
-print(f"negation retention  mean {statistics.fmean(neg):.3f}  "
-      f"perfect on {sum(1 for x in neg if x == 1) / len(neg):.0%} of docs  (n={len(neg)})")
-print(f"number retention    mean {statistics.fmean(num):.3f}  "
-      f"perfect on {sum(1 for x in num if x == 1) / len(num):.0%} of docs  (n={len(num)})\n")
+neg = [
+    r
+    for r in (_retention(p["original"], p["compressed"], "negation") for p in pairs)
+    if r is not None
+]
+num = [
+    r
+    for r in (_retention(p["original"], p["compressed"], "number") for p in pairs)
+    if r is not None
+]
+print(
+    f"negation retention  mean {statistics.fmean(neg):.3f}  "
+    f"perfect on {sum(1 for x in neg if x == 1) / len(neg):.0%} of docs  (n={len(neg)})"
+)
+print(
+    f"number retention    mean {statistics.fmean(num):.3f}  "
+    f"perfect on {sum(1 for x in num if x == 1) / len(num):.0%} of docs  (n={len(num)})\n"
+)
 
 degenerate = [
-    i for i, (p, r) in enumerate(zip(pairs, ratios)) if r < 0.05 or r > 0.95 or not p["compressed"].strip()
+    i
+    for i, (p, r) in enumerate(zip(pairs, ratios))
+    if r < 0.05 or r > 0.95 or not p["compressed"].strip()
 ]
 print(f"degenerate documents (kept <5% or >95%): {len(degenerate)}")
 
@@ -58,8 +72,19 @@ print()
 print("after the paper's quality filters (drop worst 5% variation, worst 10% gap):")
 try:
     kept = filter_examples(
-        [type("S", (), dict(variation_rate=x["variation_rate"], alignment_gap=x["alignment_gap"],
-                            words=[], labels=x["labels"]))() for x in labels]
+        [
+            type(
+                "S",
+                (),
+                dict(
+                    variation_rate=x["variation_rate"],
+                    alignment_gap=x["alignment_gap"],
+                    words=[],
+                    labels=x["labels"],
+                ),
+            )()
+            for x in labels
+        ]
     )
     print(f"   {len(kept)} of {len(labels)} survive ({len(kept) / len(labels):.0%})")
 except Exception as e:
