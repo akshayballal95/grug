@@ -69,7 +69,9 @@ Compression only helps if meaning survives it. Scored dropped negations same run
 | **grug classifier** (mbert-control) | 37% | 0.58 | 0.70 | **0%** |
 | LLMLingua-2 | 30% | 0.56 | 0.69 | 43% |
 
-Two things stand out. Compressing `grug rules` scored *higher F1* sending full document, 62% tokens -- sounds wrong until remember what deletes noise. Exact match hair lower, 0.61 against 0.62, wash rather win. classifier reaches third tokens slightly better answer quality LLMLingua-2, losing no negations LLMLingua-2 loses 43%.
+`grug rules` keeps 62% tokens answers full document: 0.76 F1 against 0.75, 0.61 exact match against 0.62. Both gaps 0.01, inside standard error 600 questions.
+
+classifier spends quality smaller prompt: 37% tokens 0.70 F1. comparable size answers slightly better LLMLingua-2, keeps every negation LLMLingua-2 drops 43% them.
 
 Reproduce `grug benchmark qa`. Raw results
 [`benchmarks/`](https://github.com/akshayballal95/grug/tree/main/benchmarks/sonnet46/).

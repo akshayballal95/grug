@@ -72,7 +72,7 @@ against reference answers:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/akshayballal95/grug/main/docs/assets/qa-quality-dark.svg">
-  <img alt="Answer quality vs tokens sent: grug rules beats the uncompressed baseline with 62% of the tokens; the grug classifier keeps F1 0.70 with 37%." src="https://raw.githubusercontent.com/akshayballal95/grug/main/docs/assets/qa-quality-light.svg">
+  <img alt="Answer quality vs tokens sent: grug rules beats the uncompressed baseline with 62% of the tokens; grug cascade matches it on 50%; the grug classifier keeps F1 0.70 with 37%." src="https://raw.githubusercontent.com/akshayballal95/grug/main/docs/assets/qa-quality-light.svg">
 </picture>
 
 Compression only helps if the meaning survives it. Scored for dropped
@@ -86,20 +86,18 @@ negations on the same run, neither grug backend lost a single one:
 | **grug classifier** (mbert-control) | 37% | 0.58 | 0.70 | **0%** |
 | LLMLingua-2 | 30% | 0.56 | 0.69 | 43% |
 
-Three things stand out. Compressing with `grug rules` scored *higher F1* than
-sending the full document, on 62% of the tokens -- which sounds wrong until you
-remember that what it deletes is noise. Exact match is a hair lower, 0.61
-against 0.62, so it is a wash there rather than a win.
+`grug rules` keeps 62% of the tokens and answers about as well as the full
+document: 0.76 F1 against 0.75, 0.61 exact match against 0.62. Both gaps are
+0.01, inside the standard error on 600 questions.
 
-`grug cascade` halves the document and answers exactly as well as not
-compressing it at all: 0.62 exact match against 0.62, F1 0.75 against 0.75. It
-runs the rules engine first and gives the classifier a document that has
-already lost its padding, so the budget is spent choosing between words that
-carry something.
+`grug cascade` halves the document for the same trade: 50% of the tokens, 0.75
+F1 and 0.62 exact match, both level with sending everything. It runs the rules
+engine first, so the classifier only has to choose between words that survived a
+pass that deletes nothing load-bearing.
 
-And the classifier alone reaches a third of the tokens at slightly better
-answer quality than LLMLingua-2, losing no negations where LLMLingua-2 loses
-43%.
+The classifier alone spends some of that quality on a smaller prompt: 37% of the
+tokens for 0.70 F1. At a comparable size it answers slightly better than
+LLMLingua-2, and keeps every negation where LLMLingua-2 drops 43% of them.
 
 Reproduce it with `grug benchmark qa`. Raw results are in
 [`benchmarks/`](https://github.com/akshayballal95/grug/tree/main/benchmarks/sonnet46/).

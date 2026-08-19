@@ -147,5 +147,13 @@ grug train run --data /tmp/g/data --out /tmp/g/ckpt \
   --model answerdotai/ModernBERT-base --epochs 1 --batch-size 4 --device cpu
 ```
 
+## What has already been tried
+
+[docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) records the variants that were
+measured and the numbers they scored: prefixing the question before compressing
+(no reliable gain), keeping whole sentences instead of scattered words (clearly
+worse), and running the rules engine before the classifier (holds up, not yet
+promoted). Read it before spending a GPU on any of them again.
+
 [corpus]: https://huggingface.co/datasets/microsoft/MeetingBank-LLMCompressed
 [moos]: https://arxiv.org/abs/2504.16786
