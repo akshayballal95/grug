@@ -455,6 +455,23 @@ def train_generate(
     ] = None,
     workers: Annotated[int, typer.Option("--workers", min=1)] = 16,
     temperature: Annotated[float, typer.Option("--temperature")] = 0.0,
+    max_tokens: Annotated[
+        int,
+        typer.Option(
+            "--max-tokens",
+            min=256,
+            help="Output ceiling per passage. A reasoning teacher spends most of this "
+            "thinking, so too low a value silently truncates the compression.",
+        ),
+    ] = 16384,
+    reasoning_effort: Annotated[
+        str | None,
+        typer.Option(
+            "--reasoning-effort",
+            help="Thinking budget for reasoning teachers, e.g. 'low' to switch it off. "
+            "On Gemini 3.7 Flash that is ~6x cheaper for a slightly softer compression.",
+        ),
+    ] = None,
     dataset: Annotated[
         str, typer.Option("--dataset", help="Source of passages to compress.")
     ] = "microsoft/MeetingBank-LLMCompressed",
@@ -479,7 +496,13 @@ def train_generate(
     passages = [r["prompt"] for r in rows if r.get("prompt")]
     _err(f"{len(passages)} passages, teacher={model}, instruction={instruction}")
 
-    client = llm.LLMClient(model=model, workers=workers, temperature=temperature, max_tokens=8192)
+    client = llm.LLMClient(
+        model=model,
+        workers=workers,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        reasoning_effort=reasoning_effort,
+    )
     summary = distill.generate_corpus(passages, client, out, instruction=instruction)
     _err(
         f"labelled {summary['labelled']}/{summary['passages']} ({summary['failed']} failed) -> {out}"
@@ -528,7 +551,7 @@ def train_distill(
     results = []
     for model in [m.strip() for m in models.split(",") if m.strip()]:
         client = llm.LLMClient(
-            model=model, workers=workers, temperature=temperature, max_tokens=4096
+            model=model, workers=workers, temperature=temperature, max_tokens=8192
         )
         for variant in variants:
             template = distill.INSTRUCTIONS[variant]

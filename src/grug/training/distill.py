@@ -273,12 +273,28 @@ def generate_corpus(
 
     template = INSTRUCTIONS[instruction]
     kept = failures = 0
+
+    from .progress import ProgressBar
+
+    remaining = len(passages) - done
+    bar = ProgressBar(remaining, label="  distilling") if progress else None
+    usage = getattr(client, "usage", None)
+    completed = 0
+
     for start in range(done, len(passages), batch_size):
         batch = passages[start : start + batch_size]
+        if bar is not None:
+            base = completed
+
+            def tick(n: int, _total: int, _base: int = base) -> None:
+                bar.update(_base + n, cost=getattr(usage, "cost_usd", 0.0))
+
+            client.on_progress = tick
         outputs = [
             strip_envelope(o)
             for o in client.complete_many([template.format(text=text) for text in batch])
         ]
+        completed += len(batch)
 
         with (
             pairs_path.open("a", encoding="utf-8") as raw,
@@ -311,10 +327,24 @@ def generate_corpus(
                     + "\n"
                 )
                 kept += 1
-        if progress:
+        if bar is not None:
+            note = f"{kept} labelled"
+            if failures:
+                note += f", {failures} failed"
+            truncated = getattr(usage, "truncated", 0)
+            if truncated:
+                note += f", {truncated} truncated"
+            bar.update(completed, cost=getattr(usage, "cost_usd", 0.0), note=note, force=True)
+
+    if bar is not None:
+        bar.close(cost=getattr(usage, "cost_usd", 0.0))
+    if progress and usage is not None:
+        print(f"  spent: {usage.summary()}", flush=True)
+        if usage.truncated:
             print(
-                f"  {min(start + batch_size, len(passages))}/{len(passages)} passages "
-                f"({kept} labelled, {failures} failed)",
+                f"  WARNING: {usage.truncated} compressions hit the token ceiling and are "
+                f"cut short. Raise --max-tokens and delete the corpus before re-running; "
+                f"a truncated compression is not a compression.",
                 flush=True,
             )
 
@@ -323,5 +353,10 @@ def generate_corpus(
         "labelled": kept,
         "failed": failures,
         "instruction": instruction,
+        "cost_usd": round(getattr(usage, "cost_usd", 0.0), 4),
+        "prompt_tokens": getattr(usage, "prompt_tokens", 0),
+        "completion_tokens": getattr(usage, "completion_tokens", 0),
+        "reasoning_tokens": getattr(usage, "reasoning_tokens", 0),
+        "truncated": getattr(usage, "truncated", 0),
         "dir": str(directory),
     }

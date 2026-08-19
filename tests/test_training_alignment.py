@@ -215,3 +215,29 @@ def test_strip_envelope_keeps_a_heading_that_is_real_content():
     assert strip_envelope("Item 15, report from City Manager") == (
         "Item 15, report from City Manager"
     )
+
+
+def test_progress_bar_reports_position_and_spend():
+    import io
+
+    from grug.training.progress import ProgressBar
+
+    buf = io.StringIO()
+    bar = ProgressBar(4, label="run", stream=buf, log_interval=0)
+    bar.update(2, cost=0.50)
+    bar.close(cost=1.00)
+    text = buf.getvalue()
+    assert "2/4" in text and "50%" in text
+    assert "$0.50" in text and "$1.00 projected" in text
+
+
+def test_usage_summary_flags_truncation():
+    from grug.benchmark.llm import Usage
+
+    quiet = Usage(calls=3, prompt_tokens=1000, completion_tokens=500, cost_usd=0.25)
+    assert "TRUNCATED" not in quiet.summary()
+    assert "$0.25" in quiet.summary()
+
+    loud = Usage(calls=3, completion_tokens=500, reasoning_tokens=400, truncated=2)
+    assert "2 TRUNCATED" in loud.summary()
+    assert "80% of out" in loud.summary()
