@@ -50,18 +50,23 @@ def to_svg(
 
     ceiling = next((r for r in records if r["backend"] == "original"), None)
     points = [r for r in records if r is not ceiling]
-    width, height, pad = 720, 420, 64
-    plot_w, plot_h = width - 2 * pad, height - 2 * pad
+    width, height, pad = 720, 450, 64
+    plot_w, plot_h = width - 2 * pad, height - 2 * pad - 30
 
+    # Frame the data rather than the origin. Every backend scores between 0.55
+    # and 0.63 here, so anchoring at zero spends three quarters of the plot on
+    # empty space and hides the differences the chart exists to show. The
+    # uncompressed line is drawn across it, which keeps a reference in view.
     ys = [r[metric] for r in records]
-    y_lo, y_hi = min([*ys, 0.0]), max([*ys, 0.01])
-    y_hi += (y_hi - y_lo) * 0.15 or 0.1
+    y_lo, y_hi = min(ys), max(ys)
+    margin = (y_hi - y_lo) * 0.35 or 0.05
+    y_lo, y_hi = max(0.0, y_lo - margin), y_hi + margin
 
     def px(ratio: float) -> float:
         return pad + ratio * plot_w
 
     def py(value: float) -> float:
-        return height - pad - (value - y_lo) / (y_hi - y_lo) * plot_h
+        return pad + plot_h - (value - y_lo) / (y_hi - y_lo) * plot_h
 
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
@@ -70,15 +75,15 @@ def to_svg(
         f'<text x="{pad}" y="{pad - 28}" font-size="17" font-weight="600">{title}</text>',
         f'<text x="{pad}" y="{pad - 10}" font-size="12" fill="#666">'
         f"x: achieved ratio (lower = more compression) &#183; y: {metric}</text>",
-        f'<line x1="{pad}" y1="{height - pad}" x2="{width - pad}" y2="{height - pad}" stroke="#ccc"/>',
-        f'<line x1="{pad}" y1="{pad}" x2="{pad}" y2="{height - pad}" stroke="#ccc"/>',
+        f'<line x1="{pad}" y1="{pad + plot_h}" x2="{width - pad}" y2="{pad + plot_h}" stroke="#ccc"/>',
+        f'<line x1="{pad}" y1="{pad}" x2="{pad}" y2="{pad + plot_h}" stroke="#ccc"/>',
     ]
 
     for tick in (0.0, 0.25, 0.5, 0.75, 1.0):
         x = px(tick)
-        parts.append(f'<line x1="{x}" y1="{pad}" x2="{x}" y2="{height - pad}" stroke="#f1f3f5"/>')
+        parts.append(f'<line x1="{x}" y1="{pad}" x2="{x}" y2="{pad + plot_h}" stroke="#f1f3f5"/>')
         parts.append(
-            f'<text x="{x}" y="{height - pad + 18}" font-size="11" fill="#666" '
+            f'<text x="{x}" y="{pad + plot_h + 18}" font-size="11" fill="#666" '
             f'text-anchor="middle">{tick:.2f}</text>'
         )
     for frac in range(5):
@@ -107,17 +112,24 @@ def to_svg(
         colour = colours.setdefault(name, _PALETTE[len(colours) % len(_PALETTE)])
         x, y = px(record["ratio"]), py(record[metric])
         parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="6" fill="{colour}" opacity="0.9"/>')
+        # The score, not the requested rate: the rate is identical across
+        # points and says nothing, and next to a backend that missed its
+        # target it actively misleads.
         parts.append(
-            f'<text x="{x:.1f}" y="{y - 11:.1f}" font-size="10" fill="#495057" '
-            f'text-anchor="middle">{record["rate"]:.2f}</text>'
+            f'<text x="{x:.1f}" y="{y - 12:.1f}" font-size="11" fill="#495057" '
+            f'text-anchor="middle">{record[metric]:.3f}</text>'
         )
 
-    for index, (name, colour) in enumerate(colours.items()):
-        y = pad + 6 + index * 18
-        parts.append(f'<circle cx="{width - pad - 150}" cy="{y - 4}" r="5" fill="{colour}"/>')
+    # Laid out along the bottom. In the plot it sat on top of the uncompressed
+    # label, which is where that label has to go.
+    legend_y = height - pad + 40
+    cursor = pad
+    for name, colour in colours.items():
+        parts.append(f'<circle cx="{cursor + 5}" cy="{legend_y - 4}" r="5" fill="{colour}"/>')
         parts.append(
-            f'<text x="{width - pad - 138}" y="{y}" font-size="12" fill="#343a40">{name}</text>'
+            f'<text x="{cursor + 16}" y="{legend_y}" font-size="12" fill="#343a40">{name}</text>'
         )
+        cursor += 26 + len(name) * 7
 
     parts.append("</svg>")
     target = Path(path)
