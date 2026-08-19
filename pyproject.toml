@@ -63,6 +63,19 @@ grug = "grug.cli:app"
 [tool.hatch.build.targets.wheel]
 packages = ["src/grug"]
 
+# Keep the sdist to the package, its tests, and the docs that ship with it.
+# Raw benchmark artifacts stay in the repo, not in every download.
+[tool.hatch.build.targets.sdist]
+include = [
+  "/src",
+  "/tests",
+  "/examples",
+  "/docs",
+  "/README.md",
+  "/TRAINING.md",
+  "/LICENSE",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [

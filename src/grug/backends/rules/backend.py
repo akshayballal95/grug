@@ -129,7 +129,9 @@ class RulesBackend(CompressorBackend):
         pack = language if isinstance(language, Language) else get_language(language)
         self.language = pack
         self.rules = pack.rules if rules is None else rules
-        self.never_drop = pack.never_drop | frozenset(w.lower() for w in keep_words)
+        self.never_drop = (
+            pack.negations | pack.never_drop | frozenset(w.lower() for w in keep_words)
+        )
         self.never_drop_patterns = tuple(
             re.compile(p) for p in (*pack.never_drop_patterns, *keep_patterns)
         )

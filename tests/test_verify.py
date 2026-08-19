@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from grug.verify import find_entities, find_negations, find_numbers, verify
+from grug.verify import (
+    find_entities,
+    find_negations,
+    find_number_relations,
+    find_numbers,
+    verify,
+)
 
 # -- negation ---------------------------------------------------------------
 
@@ -306,3 +312,85 @@ def test_a_bare_second_mention_is_not_a_collision():
 def test_genuinely_different_names_still_collide():
     warnings = verify("Bank of America met Bank of England.", "Bank met Bank.")
     assert any("indistinguishable" in w for w in warnings)
+
+
+# -- number relations ---------------------------------------------------------
+
+
+def test_find_number_relations_pairs_nearby_numbers():
+    relations = find_number_relations("We failed 3 of 12 runs and waited 5 to 9 days.")
+    assert ("3", "of", "12") in relations
+    assert ("5", "to", "9") in relations
+
+
+def test_lost_number_relation_is_flagged():
+    warnings = verify("The build failed on 3 of 12 runs.", "build failed 3 12 runs")
+    assert any("relation" in w for w in warnings)
+    assert "3 of 12" in " ".join(warnings)
+
+
+def test_kept_number_relation_is_clean():
+    assert verify("The build failed on 3 of 12 runs.", "build failed 3 of 12 runs") == []
+
+
+def test_partially_kept_relation_is_clean():
+    """ "2 out of 3" clipped to "2 of 3" still carries the relation."""
+    assert verify("We reached 2 out of 3 regions.", "reached 2 of 3 regions") == []
+
+
+def test_numbers_adjacent_in_the_original_are_not_a_relation():
+    assert verify("Rows 3 12 were bad.", "Rows 3 12 bad") == []
+
+
+# -- language awareness -------------------------------------------------------
+
+
+def test_unicode_words_tokenize_whole():
+    """ "über" must be one word, not "ber": the tokenizer cannot be ASCII-only."""
+    counts = find_negations("wir können nicht über das reden", negations=frozenset({"nicht"}))
+    assert counts == {"nicht": 1}
+    assert find_negations("über nicht", negations=frozenset({"ber"})) == {}
+
+
+def test_verify_accepts_a_language_pack():
+    from grug.backends.rules import Language, RuleSet
+
+    pack = Language(
+        code="de-verify-test",
+        rules=RuleSet(),
+        negations=frozenset({"nicht", "kein"}),
+        capitalized_names=False,
+    )
+    warnings = verify("Der Plan ist nicht gut.", "Der Plan ist gut.", language=pack)
+    assert any("nicht" in w for w in warnings)
+
+
+def test_verify_resolves_a_registered_language_code():
+    from grug.backends.rules import Language, RuleSet, register_language, unregister_language
+
+    register_language(
+        Language(code="xx-verify-reg", rules=RuleSet(), negations=frozenset({"nope"}))
+    )
+    try:
+        warnings = verify("this is nope good", "this is good", language="xx-verify-reg")
+        assert any("nope" in w for w in warnings)
+    finally:
+        unregister_language("xx-verify-reg")
+
+
+def test_entity_checks_are_skipped_without_capitalized_names():
+    """German capitalises every noun; treating each as an entity floods warnings."""
+    from grug.backends.rules import Language, RuleSet
+
+    pack = Language(code="de-ent-test", rules=RuleSet(), capitalized_names=False)
+    original = "Der Plan ist die Antwort auf das Problem."
+    compressed = "Der Plan ist die auf das Problem."
+    assert any("entities" in w for w in verify(original, compressed))
+    assert verify(original, compressed, language=pack) == []
+
+
+def test_unknown_language_code_raises():
+    import pytest as _pytest
+
+    with _pytest.raises(KeyError, match="Unknown language"):
+        verify("some text", "some text", language="zz-missing")

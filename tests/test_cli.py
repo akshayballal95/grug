@@ -258,6 +258,14 @@ def test_verify_missing_file_exits_one(cli_command, tmp_path):
 # -- backends ---------------------------------------------------------------
 
 
+def test_verify_rejects_an_unknown_language(cli_command, tmp_path):
+    doc = tmp_path / "a.txt"
+    doc.write_text("some text here", encoding="utf-8")
+    result = run(cli_command, "verify", str(doc), str(doc), "--language", "zz")
+    assert result.returncode == ERROR
+    assert "Unknown language" in result.stderr
+
+
 def test_backends_lists_availability(cli_command):
     result = run(cli_command, "backends")
     assert result.returncode == OK

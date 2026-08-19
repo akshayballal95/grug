@@ -210,17 +210,30 @@ class Language:
     code: str
     #: The rules run by default for this language.
     rules: RuleSet
-    #: Words the engine must never drop, whatever a rule nominates. Negations
-    #: belong here: losing one flips the meaning of what remains.
+    #: This language's negation cues. Doubly load-bearing: the engine vetoes
+    #: them (losing one flips the meaning of what remains) and the verifier
+    #: checks them, so the protected and the policed vocabulary cannot drift.
+    negations: frozenset[str] | set[str] = frozenset()
+    #: Extra words the engine must never drop, whatever a rule nominates.
     never_drop: frozenset[str] | set[str] = frozenset()
     #: Regexes vetoing whole classes of words. Searched against the *raw*
     #: token, punctuation and case included, so ``[A-Z]{2,}`` can protect
     #: acronyms that lowercased cores erase. A veto that matches too much only
     #: keeps extra words, which is the safe direction to err in.
     never_drop_patterns: tuple[str, ...] = ()
+    #: Function words the verifier skips when pairing a negation with the word
+    #: it applies to. English's list lives in :mod:`grug.verify`; leave empty
+    #: for a language without one and the scope check is skipped.
+    scope_skip: frozenset[str] | set[str] = frozenset()
+    #: Whether capitalisation marks proper names in this language. German
+    #: capitalises every noun, so its packs set this to ``False`` and the
+    #: verifier's entity checks stand down instead of flooding warnings.
+    capitalized_names: bool = True
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "never_drop", frozenset(w.lower() for w in self.never_drop))
+        for field_name in ("negations", "never_drop", "scope_skip"):
+            words = getattr(self, field_name)
+            object.__setattr__(self, field_name, frozenset(w.lower() for w in words))
         patterns = tuple(self.never_drop_patterns)
         for pattern in patterns:
             re.compile(pattern)  # a bad regex should fail here, not mid-compress

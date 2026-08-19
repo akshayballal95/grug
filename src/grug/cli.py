@@ -293,6 +293,10 @@ def _write_output(text: str, source: str, output: str | None) -> None:
 def verify(
     original: Annotated[str, typer.Argument(help="Path to the original document, or '-'.")],
     compressed: Annotated[str, typer.Argument(help="Path to the compressed document, or '-'.")],
+    language: Annotated[
+        str,
+        typer.Option("--language", "-l", help="Language pack to check with. Default: en."),
+    ] = "en",
     as_json: Annotated[
         bool, typer.Option("--json", help="Emit warnings as JSON on stdout.")
     ] = False,
@@ -305,11 +309,17 @@ def verify(
         _err(f"error: {exc}")
         raise typer.Exit(EXIT_ERROR) from exc
 
+    try:
+        found = run_verify(original_text, compressed_text, language=language)
+    except KeyError as exc:  # an unregistered language code
+        _err(f"error: {exc}")
+        raise typer.Exit(EXIT_ERROR) from exc
+
     result = CompressionResult.build(
         original_text,
         compressed_text,
         "verify",
-        warnings=run_verify(original_text, compressed_text),
+        warnings=found,
     )
 
     if as_json:

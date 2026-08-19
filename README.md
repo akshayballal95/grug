@@ -1,8 +1,8 @@
 <div align="center">
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/grug-banner-dark.svg">
-  <img alt="grug. grug make text small. grug keep meaning." src="docs/assets/grug-banner-light.svg" width="540">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/akshayballal95/grug/main/docs/assets/grug-banner-dark.svg">
+  <img alt="grug. grug make text small. grug keep meaning." src="https://raw.githubusercontent.com/akshayballal95/grug/main/docs/assets/grug-banner-light.svg" width="540">
 </picture>
 
 Shrink anything you feed an LLM. Keep the words that change the answer.
@@ -10,7 +10,7 @@ Shrink anything you feed an LLM. Keep the words that change the answer.
 [![PyPI](https://img.shields.io/pypi/v/grugify)](https://pypi.org/project/grugify/)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://github.com/akshayballal95/grug)
 [![CI](https://github.com/akshayballal95/grug/actions/workflows/ci.yml/badge.svg)](https://github.com/akshayballal95/grug/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/akshayballal95/grug/blob/main/LICENSE)
 
 </div>
 
@@ -71,8 +71,8 @@ transcripts, compressed at rate 0.33, answered by Claude Sonnet 4.6, scored
 against reference answers:
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/qa-quality-dark.svg">
-  <img alt="Answer quality vs tokens sent: grug rules beats the uncompressed baseline with 62% of the tokens; the grug classifier keeps F1 0.70 with 37%." src="docs/assets/qa-quality-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/akshayballal95/grug/main/docs/assets/qa-quality-dark.svg">
+  <img alt="Answer quality vs tokens sent: grug rules beats the uncompressed baseline with 62% of the tokens; the grug classifier keeps F1 0.70 with 37%." src="https://raw.githubusercontent.com/akshayballal95/grug/main/docs/assets/qa-quality-light.svg">
 </picture>
 
 Compression only helps if the meaning survives it. Scored for dropped
@@ -93,7 +93,7 @@ reaches a third of the tokens at slightly better answer quality than
 LLMLingua-2, losing no negations where LLMLingua-2 loses 43%.
 
 Reproduce it with `grug benchmark qa`. Raw results are in
-[`benchmarks/`](benchmarks/sonnet46/).
+[`benchmarks/`](https://github.com/akshayballal95/grug/tree/main/benchmarks/sonnet46/).
 
 ## Quick start
 
@@ -144,7 +144,7 @@ invent a fact. `rate` means the same thing everywhere, the fraction of tokens to
 
 The classifier takes any Hugging Face token-classification checkpoint with a
 trained preserve/discard head and a fast tokenizer (ModernBERT, mmBERT, EuroBERT
-all work). Training your own is three commands; see [TRAINING.md](TRAINING.md).
+all work). Training your own is three commands; see [TRAINING.md](https://github.com/akshayballal95/grug/blob/main/TRAINING.md).
 
 ## The rules engine
 
@@ -177,7 +177,7 @@ register_language(
     Language(
         code="de",
         rules=RuleSet(WordClassRule("artikel", {"der", "die", "das"}, priority=10)),
-        never_drop=frozenset({"nicht", "kein", "keine", "ohne"}),
+        negations=frozenset({"nicht", "kein", "keine", "ohne"}),
     )
 )
 backend = RulesBackend(language="de")
@@ -186,7 +186,7 @@ backend = RulesBackend(language="de")
 Because the vetoes belong to the engine, a badly written custom rule cannot break
 the guarantees. There is a test where a hostile rule nominates every single word
 in the document, and the negations, numbers, and code spans still come through.
-[`examples/rules_backend.py`](examples/rules_backend.py) walks through all of it.
+[`examples/rules_backend.py`](https://github.com/akshayballal95/grug/blob/main/examples/rules_backend.py) walks through all of it.
 
 ## Faithfulness
 
@@ -200,7 +200,11 @@ connectives between numbers at any rate, and the classifier pins negations,
 digits, detected entities, and markdown structure before it ranks anything.
 
 Verification second: every compression is checked for negation loss, negation
-scope loss, number loss, and entity loss. There is no NER model and no ML in the
+scope loss, number loss, lost relations between numbers (`3 of 12` collapsing
+to `3 12`), and entity loss. The verifier speaks the backend's language: give
+the rules backend a German pack and its negations are what get checked, while
+the capitalisation-based entity heuristics stand down for languages that
+capitalise every noun. There is no NER model and no ML in the
 verifier, just regex and exact matching. That costs some precision on entities
 and buys a checker that works on exactly the kind of terse, ungrammatical text a
 model-based checker would choke on, in microseconds.
@@ -300,7 +304,7 @@ be welcome PRs.
 
 ## License
 
-[MIT](LICENSE). The bundled benchmark uses the
+[MIT](https://github.com/akshayballal95/grug/blob/main/LICENSE). The bundled benchmark uses the
 [MeetingBank-LLMCompressed](https://huggingface.co/datasets/microsoft/MeetingBank-LLMCompressed)
 dataset; check its license before shipping a checkpoint trained on it.
 
@@ -310,6 +314,6 @@ dataset; check its license before shipping a checkpoint trained on it.
 
 *grug not need many words. grug need right words.*
 
-This README, [compressed by grug itself](README.grug.md).
+This README, [compressed by grug itself](https://github.com/akshayballal95/grug/blob/main/README.grug.md).
 
 </div>

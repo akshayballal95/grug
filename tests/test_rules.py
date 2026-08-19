@@ -411,6 +411,36 @@ def test_a_new_language_can_be_registered_and_used():
         unregister_language("de-test")
 
 
+def test_pack_negations_are_vetoed_by_the_engine():
+    """The negations field is both verified and protected, like English."""
+    pack = Language(
+        code="neg-veto-test",
+        rules=RuleSet(WordClassRule("alles", {"nicht", "der"}, priority=10)),
+        negations=frozenset({"nicht"}),
+    )
+    result = RulesBackend(language=pack).compress("der Plan war nicht gut heute", rate=0.05)
+    words = result.text.split()
+    assert "nicht" in words
+    assert "der" not in words
+
+
+def test_the_pipeline_verifies_in_the_backend_language():
+    """grug.compress with a pack must not run the English entity check on it."""
+    pack = Language(
+        code="de-pipe-test",
+        rules=RuleSet(WordClassRule("nomen", {"antwort"}, priority=10)),
+        negations=frozenset({"nicht"}),
+        capitalized_names=False,
+    )
+    result = grug.compress(
+        "Der Plan ist nicht die Antwort auf das Problem.",
+        rate=0.05,
+        backend=RulesBackend(language=pack),
+    )
+    assert "Antwort" not in result.text
+    assert result.warnings == []
+
+
 def test_an_unregistered_language_pack_can_be_passed_directly():
     pack = Language(
         code="uni-test",

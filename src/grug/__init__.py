@@ -196,7 +196,11 @@ class Compressor:
         )
         should_verify = self.verify if verify is None else verify
         if should_verify:
-            result.warnings.extend(run_verify(text, result.text))
+            # A backend that carries a language pack (the rules backend does)
+            # is verified with that language's vocabulary; anything else gets
+            # the English default.
+            language = getattr(self._backend, "language", "en")
+            result.warnings.extend(run_verify(text, result.text, language=language))
         return result
 
     def compress_batch(

@@ -9,17 +9,23 @@ reattached to the wrong word), number loss (a rewritten claim), entity loss
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING
 
 __all__ = [
     "NEGATION_FORCE_TOKENS",
     "NEGATION_WORDS",
+    "SCOPE_SKIP",
     "find_entities",
     "find_negation_scopes",
     "find_negations",
+    "find_number_relations",
     "find_numbers",
     "is_negation",
     "verify",
 ]
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from .backends.rules.core import Language
 
 # fmt: off
 #: Words whose disappearance can invert a statement's meaning.
@@ -40,7 +46,7 @@ NEGATION_FORCE_TOKENS: tuple[str, ...] = ("n't", *sorted(NEGATION_WORDS))
 #: no claim of its own, so losing one is not scope loss: "not when you import"
 #: scopes over "import", and "not at module scope" over "module". Deliberately
 #: no verbs beyond the auxiliaries -- "cannot be waived" scopes over "waived".
-_SCOPE_SKIP: frozenset[str] = frozenset({
+SCOPE_SKIP: frozenset[str] = frozenset({
     # determiners and quantifiers
     "a", "an", "the", "any", "this", "that", "these", "those", "all", "both",
     "each", "every", "some", "much", "many",
@@ -68,8 +74,9 @@ _SCOPE_SKIP: frozenset[str] = frozenset({
 #: they separate independent clauses as firmly as a full stop does.
 _SENTENCE_END_RE = re.compile(r"[.!?;:\n]")
 
-_WORD_RE = re.compile(r"[A-Za-z]+(?:'[A-Za-z]+)?")
-_KEPT_RE = re.compile(r"[a-z0-9]+(?:['&.-][a-z0-9]+)*")
+# Unicode-aware: "über" is one word, not "ber". [^\W\d_] is "any letter".
+_WORD_RE = re.compile(r"[^\W\d_]+(?:'[^\W\d_]+)?")
+_KEPT_RE = re.compile(r"[^\W_]+(?:['&.-][^\W_]+)*")
 _SPLIT_RE = re.compile(r"['&.-]")
 
 # Ints, decimals, thousands-separated figures, percentages, and dotted versions.
@@ -125,7 +132,7 @@ def _norm_number(raw: str) -> str:
     return raw.lower().replace(",", "")
 
 
-def is_negation(word: str) -> bool:
+def is_negation(word: str, negations: frozenset[str] = NEGATION_WORDS) -> bool:
     """Whether a word is a negation cue.
 
     Contractions are the reason this exists as a function: the cue in
@@ -133,10 +140,10 @@ def is_negation(word: str) -> bool:
     matches the whole word, and the negation goes unprotected.
     """
     lowered = word.lower()
-    return lowered.endswith("n't") or lowered in NEGATION_WORDS
+    return lowered.endswith("n't") or lowered in negations
 
 
-def find_negations(text: str) -> dict[str, int]:
+def find_negations(text: str, negations: frozenset[str] = NEGATION_WORDS) -> dict[str, int]:
     """Count negation cues, treating ``-n't`` contractions as their own cue."""
     counts: dict[str, int] = {}
     lowered = text.lower()
@@ -145,13 +152,17 @@ def find_negations(text: str) -> dict[str, int]:
         if word.endswith("n't"):
             counts["n't"] = counts.get("n't", 0) + 1
             continue
-        if word in NEGATION_WORDS:
+        if word in negations:
             counts[word] = counts.get(word, 0) + 1
     # "cant"/"wont" style apostrophe-less contractions are ambiguous; skipped.
     return counts
 
 
-def find_negation_scopes(text: str) -> list[tuple[str, str]]:
+def find_negation_scopes(
+    text: str,
+    negations: frozenset[str] = NEGATION_WORDS,
+    scope_skip: frozenset[str] = SCOPE_SKIP,
+) -> list[tuple[str, str]]:
     """Pair each negation cue with the word it scopes over.
 
     Pinning a negation keeps the cue but not what it applies to, and a cue that
@@ -172,7 +183,7 @@ def find_negation_scopes(text: str) -> list[tuple[str, str]]:
     pairs: list[tuple[str, str]] = []
     for index, match in enumerate(matches):
         word = match.group(0)
-        if not (word.endswith("n't") or word in NEGATION_WORDS):
+        if not (word.endswith("n't") or word in negations):
             continue
         cursor = match.end()
         for candidate_match in matches[index + 1 :]:
@@ -180,9 +191,9 @@ def find_negation_scopes(text: str) -> list[tuple[str, str]]:
                 break  # a new sentence; whatever it says is not this cue's scope
             cursor = candidate_match.end()
             candidate = candidate_match.group(0)
-            if candidate in _SCOPE_SKIP:
+            if candidate in scope_skip:
                 continue
-            if candidate.endswith("n't") or candidate in NEGATION_WORDS:
+            if candidate.endswith("n't") or candidate in negations:
                 break  # the next cue owns that word as its own scope
             pairs.append((word, candidate))
             break
@@ -196,6 +207,46 @@ def find_numbers(text: str) -> dict[str, int]:
         key = _norm_number(match.group(0))
         counts[key] = counts.get(key, 0) + 1
     return counts
+
+
+#: Numbers and words, interleaved, so number pairs can see what sits between.
+_REL_SCAN = re.compile(
+    rf"(?P<num>{_NUMBER_RE.pattern})|(?P<word>[^\W\d_]+(?:'[^\W\d_]+)?)", re.VERBOSE
+)
+#: How many words apart two numbers can be and still count as related.
+_RELATION_WINDOW = 3
+
+
+def _number_pairs(text: str) -> list[tuple[str, list[str], str]]:
+    """Consecutive number pairs and the words between them, sentence-bounded."""
+    pairs: list[tuple[str, list[str], str]] = []
+    pending: str | None = None
+    between: list[str] = []
+    last_end = 0
+    for match in _REL_SCAN.finditer(text):
+        if pending is not None and _SENTENCE_END_RE.search(text[last_end : match.start()]):
+            pending, between = None, []
+        last_end = match.end()
+        if match.group("num"):
+            number = match.group("num")
+            if pending is not None:
+                pairs.append((pending, between, number))
+            pending, between = number, []
+        elif pending is not None:
+            between.append(match.group("word"))
+            if len(between) > _RELATION_WINDOW:
+                pending, between = None, []
+    return pairs
+
+
+def find_number_relations(text: str) -> list[tuple[str, str, str]]:
+    """Number pairs joined by nearby words: ``("3", "of", "12")``.
+
+    "3 of 12" is a proportion and "3 12" is not, so the words between two
+    close-by numbers are load-bearing even though no digit is lost. Numbers
+    already adjacent carry no relation, and a sentence boundary ends one.
+    """
+    return [(n1, " ".join(mid), n2) for n1, mid, n2 in _number_pairs(text) if mid]
 
 
 def find_entities(text: str) -> list[str]:
@@ -252,17 +303,46 @@ def _fmt(items: list[str]) -> str:
     return f"{shown} (+{len(items) - _MAX_REPORTED} more)"
 
 
-def verify(original: str, compressed: str) -> list[str]:
+def _resolve_language(language: str | Language) -> tuple[frozenset[str], frozenset[str], bool]:
+    """The (negations, scope_skip, capitalized_names) triple for a language.
+
+    ``"en"`` answers from this module's own lists without touching the pack
+    registry; other codes resolve through it, and a pack instance is used as
+    given. The import is lazy because the English pack imports *this* module
+    for its vocabulary -- the dependency points that way on purpose.
+    """
+    if isinstance(language, str):
+        if language == "en":
+            return NEGATION_WORDS, SCOPE_SKIP, True
+        from .backends.rules.core import get_language
+
+        language = get_language(language)
+    return language.negations, language.scope_skip, language.capitalized_names
+
+
+def verify(original: str, compressed: str, *, language: str | Language = "en") -> list[str]:
     """Return human-readable faithfulness warnings, most severe first.
 
     An empty list means every check passed. The checks never raise; a document
     that trips nothing is not thereby proven faithful, only un-suspicious.
+
+    Args:
+        original: The document before compression.
+        compressed: What came out.
+        language: Whose vocabulary to check with: ``"en"`` (the default), a
+            registered language code, or a ``Language`` pack instance. The
+            negation checks use the pack's ``negations``; the scope check runs
+            only when the pack provides ``scope_skip`` words; the entity
+            checks stand down when the pack says capitalisation does not mark
+            names (German capitalises every noun). Number checks are
+            language-agnostic and always run.
     """
+    negations, scope_skip, capitalized_names = _resolve_language(language)
     warnings: list[str] = []
 
     # 1. Negation --------------------------------------------------------
-    orig_neg = find_negations(original)
-    comp_neg = find_negations(compressed)
+    orig_neg = find_negations(original, negations)
+    comp_neg = find_negations(compressed, negations)
     lost_neg = []
     for word, count in orig_neg.items():
         kept = comp_neg.get(word, 0)
@@ -276,18 +356,21 @@ def verify(original: str, compressed: str) -> list[str]:
     # present, so the counts balance. Only cues that survived are considered --
     # a dropped one is already reported as inversion, and reporting it twice
     # would bury the more severe warning.
-    comp_words = {m.group(0) for m in _WORD_RE.finditer(compressed.lower())}
-    stranded: list[str] = []
-    for cue, scope in find_negation_scopes(original):
-        if cue in comp_words and scope not in comp_words:
-            pair = f"{cue!r} (scope {scope!r})"
-            if pair not in stranded:
-                stranded.append(pair)
-    if stranded:
-        warnings.append(
-            f"negation kept without its scope: {_fmt(stranded)} — it now applies to "
-            "whatever followed it"
-        )
+    # Without a scope-skip list every article would read as a scope, so the
+    # check runs only for languages that provide one.
+    if scope_skip:
+        comp_words = {m.group(0) for m in _WORD_RE.finditer(compressed.lower())}
+        stranded: list[str] = []
+        for cue, scope in find_negation_scopes(original, negations, scope_skip):
+            if cue in comp_words and scope not in comp_words:
+                pair = f"{cue!r} (scope {scope!r})"
+                if pair not in stranded:
+                    stranded.append(pair)
+        if stranded:
+            warnings.append(
+                f"negation kept without its scope: {_fmt(stranded)} — it now applies to "
+                "whatever followed it"
+            )
 
     # 3. Numbers ---------------------------------------------------------
     orig_num = find_numbers(original)
@@ -296,7 +379,36 @@ def verify(original: str, compressed: str) -> list[str]:
     if missing_numbers:
         warnings.append("numbers missing from output: " + _fmt([repr(n) for n in missing_numbers]))
 
-    # 4. Entities --------------------------------------------------------
+    # 4. Number relations --------------------------------------------------
+    # Both numbers surviving is not enough: "3 of 12" collapsed to "3 12" is a
+    # different claim with every digit intact. Flag an original relation whose
+    # numbers now sit adjacent in the output, unless they already did.
+    orig_pairs = _number_pairs(original)
+    orig_adjacent = {(_norm_number(a), _norm_number(b)) for a, mid, b in orig_pairs if not mid}
+    comp_adjacent = {
+        (_norm_number(a), _norm_number(b)) for a, mid, b in _number_pairs(compressed) if not mid
+    }
+    collapsed: list[str] = []
+    for n1, mid, n2 in orig_pairs:
+        if not mid:
+            continue
+        key = (_norm_number(n1), _norm_number(n2))
+        if key in comp_adjacent and key not in orig_adjacent:
+            item = f"'{n1} {' '.join(mid)} {n2}' → '{n1} {n2}'"
+            if item not in collapsed:
+                collapsed.append(item)
+    if collapsed:
+        warnings.append(
+            "number relation lost: " + _fmt(collapsed) + " — the words relating the "
+            "quantities vanished"
+        )
+
+    # 5. Entities --------------------------------------------------------
+    if not capitalized_names:
+        # Capitalisation does not mark names in this language, so the entity
+        # heuristics would flood warnings with ordinary nouns.
+        return warnings
+
     # Tokenise the output once, rather than scanning the whole document with a
     # fresh regex for every word of every entity.
     kept = _word_set(compressed.lower())
@@ -316,7 +428,7 @@ def verify(original: str, compressed: str) -> list[str]:
             "entities missing from output: " + _fmt([repr(e) for e in missing_entities])
         )
 
-    # 5. Entity ambiguity -------------------------------------------------
+    # 6. Entity ambiguity -------------------------------------------------
     # Clipping "Acme Corporation" to "Acme" is harmless; clipping both "Bank of
     # America" and "Bank of England" to "Bank" is not. The words that survived
     # are the same, so the output can no longer say which one it means. Only a
