@@ -15,9 +15,11 @@ the pipeline is therefore testable in the fast suite.
 
 from __future__ import annotations
 
+import difflib
 import math
 import re
 import unicodedata
+from collections import Counter
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
@@ -87,9 +89,22 @@ def align(
 ) -> tuple[list[str], list[bool]]:
     """Label each word of ``original`` as kept (True) or dropped (False).
 
-    Walks the compressed words in order, searching outward from the previous
-    match -- right first, then left, which is what tolerates reordering while
-    still preferring the monotonic reading.
+    Finds the longest matching blocks between the two word sequences, then
+    fills the gaps between those anchors with near-matches, so a teacher that
+    wrote "monitored" for "monitoring" still labels the source word.
+
+    A greedy outward scan was tried first and is a trap here. Taking the first
+    fuzzy match in either direction lets a common word match spuriously far
+    ahead: on a 48k-word transcript the cursor advanced a median of 37 words
+    per match where the true stride was 3.6, ran ahead of the real position,
+    and then 75% of the compressed words fell outside its window and matched
+    nothing. It labelled 3% of a document the teacher had kept 30% of -- and
+    reported no error, because stray backward matches look like progress.
+    Anchoring on matching blocks first cannot drift, and is ~24x faster.
+
+    Args:
+        window: How far to hunt for a near-match inside a gap between anchors.
+            Bounds the cost; gaps wider than this are left to exact matching.
 
     Returns:
         The original word list and a label per word, same length.
@@ -101,26 +116,51 @@ def align(
     if not words or not targets:
         return words, labels
 
-    # Normalise once. The scan compares the same original words thousands of
-    # times, and normalising inside the comparison dominated the whole stage.
+    # Normalise once. The comparison runs over these thousands of times, and
+    # normalising inside it dominated the whole stage.
     normalised = [_normalise(w) for w in words]
-    reach = max(1, window // 2)
+    needles = [_normalise(t) for t in targets]
 
-    previous = 0
-    for target in targets:
-        needle = _normalise(target)
-        for offset in range(1, reach + 1):
-            right = min(len(words) - 1, previous + offset)
-            if _matches(needle, normalised[right], 0.8):
-                labels[right] = True
-                previous = right
+    blocks = difflib.SequenceMatcher(a=normalised, b=needles, autojunk=False).get_matching_blocks()
+    for block in blocks:
+        for offset in range(block.size):
+            labels[block.a + offset] = True
+
+    # Between two anchors sit the words the teacher altered rather than copied.
+    # Search for them only inside the gap, so a bad guess cannot move the
+    # alignment: the next anchor puts it back regardless.
+    source_end = target_end = 0
+    for block in blocks:
+        gap = block.a - source_end
+        if 0 < gap <= window:
+            cursor = source_end
+            for index in range(target_end, block.b):
+                needle = needles[index]
+                for position in range(cursor, block.a):
+                    if not labels[position] and _matches(needle, normalised[position], 0.8):
+                        labels[position] = True
+                        cursor = position + 1
+                        break
+        source_end, target_end = block.a + block.size, block.b + block.size
+
+    # A word the teacher moved is missing from every block, because blocks are
+    # monotonic by construction. Give each still-unaccounted word the earliest
+    # source position holding it. Counting rather than searching keeps this
+    # order-free, so reordering is tolerated without any cursor to lead astray.
+    wanted = Counter(needles)
+    found = Counter(normalised[i] for i, on in enumerate(labels) if on)
+    positions: dict[str, list[int]] = {}
+    for position, word in enumerate(normalised):
+        positions.setdefault(word, []).append(position)
+    for word, count in wanted.items():
+        missing = count - found.get(word, 0)
+        for position in positions.get(word, ()):
+            if missing <= 0:
                 break
-            left = max(0, previous - offset)
-            if _matches(needle, normalised[left], 0.8):
-                labels[left] = True
-                break
-            if right == len(words) - 1 and left == 0:
-                break
+            if not labels[position]:
+                labels[position] = True
+                missing -= 1
+
     return words, labels
 
 

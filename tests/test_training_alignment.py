@@ -241,3 +241,39 @@ def test_usage_summary_flags_truncation():
     loud = Usage(calls=3, completion_tokens=500, reasoning_tokens=400, truncated=2)
     assert "2 TRUNCATED" in loud.summary()
     assert "80% of out" in loud.summary()
+
+
+def test_alignment_survives_a_gap_wider_than_the_window():
+    """A dropped stretch longer than the window must not derail the rest.
+
+    The greedy scan this replaced would run its cursor past the true position
+    and label almost nothing after such a gap, on real documents losing ten
+    points of keep ratio without reporting an error.
+    """
+    from grug.training.alignment import annotate
+
+    head = "the council approved the measure without objection"
+    filler = " ".join(f"procedural item {i} was read into the record" for i in range(120))
+    tail = "the motion carried and the meeting was adjourned"
+    original = f"{head} {filler} {tail}"
+    compressed = "council approved measure without objection motion carried meeting adjourned"
+
+    stats = annotate(original, compressed)
+    survivors = " ".join(w for w, keep in zip(stats.words, stats.labels, strict=True) if keep)
+    assert "adjourned" in survivors, "lost the tail after a long dropped stretch"
+    assert "objection" in survivors
+    assert stats.alignment_gap < 0.01
+
+
+def test_negation_pileup_is_invisible_to_the_other_metrics():
+    from grug.training.alignment import annotate
+    from grug.training.distill import negation_pileup
+
+    original = "we do not agree and no one said never mind the rest of this sentence"
+    soup = "not no never not no never"
+
+    assert negation_pileup(original, soup) >= 5
+    stats = annotate(original, soup)
+    # Every word is real and alignable, so nothing else flags it.
+    assert stats.variation_rate == 0.0
+    assert negation_pileup(original, "not agree no one") == 0

@@ -72,6 +72,10 @@ def _with_rules(*rules: str) -> str:
 #: dropped: it scored *worse* on negations (0.76 vs 0.91) and compressed less,
 #: because extra rules diluted the one that mattered -- and numbers and entities
 #: are already guaranteed deterministically by the backend's force list.
+#: A run of back-to-back negations this much longer than the source's own
+#: is the negation instruction misfiring, not a faithful compression.
+PILEUP_LIMIT = 5
+
 INSTRUCTIONS: dict[str, str] = {
     "baseline": TEACHER_INSTRUCTION,
     "negation": _with_rules(_NEGATION_RULE),
@@ -126,6 +130,28 @@ def strip_envelope(text: str | None) -> str | None:
     if not text:
         return text
     return _TRAILING_FENCE.sub("", _ENVELOPE.sub("", text)).strip()
+
+
+def negation_pileup(original: str, compressed: str) -> int:
+    """Longest run of back-to-back negations the compression adds to the source.
+
+    The negation-boosting instruction has a failure mode: told to protect
+    negations, the teacher sometimes strips the words around them and emits a
+    bare string of them -- one document here ran to 41 in a row. Nothing else
+    in the pipeline sees it. Variation rate is 0.000 because every one of those
+    words is in the source, and the alignment gap is clean because they all
+    align. The filters look for invented and unalignable words, and this is
+    neither; it is real words in a useless order.
+    """
+
+    def longest(text: str) -> int:
+        best = run = 0
+        for word in split_words(text):
+            run = run + 1 if is_negation(word.strip(".,;:!?").lower()) else 0
+            best = max(best, run)
+        return best
+
+    return max(0, longest(compressed) - longest(original))
 
 
 def compress_with_teacher(text: str, client: Any) -> str:
@@ -272,7 +298,7 @@ def generate_corpus(
             print(f"  resuming: {done} passages already written", flush=True)
 
     template = INSTRUCTIONS[instruction]
-    kept = failures = 0
+    kept = failures = piled = 0
 
     from .progress import ProgressBar
 
@@ -315,6 +341,9 @@ def generate_corpus(
                     failures += 1
                     continue
                 stats = annotate(original, compressed)
+                pileup = negation_pileup(original, compressed)
+                if pileup >= PILEUP_LIMIT:
+                    piled += 1
                 labelled.write(
                     json.dumps(
                         {
@@ -322,6 +351,7 @@ def generate_corpus(
                             "labels": [int(x) for x in stats.labels],
                             "variation_rate": round(stats.variation_rate, 4),
                             "alignment_gap": round(stats.alignment_gap, 4),
+                            "negation_pileup": pileup,
                         }
                     )
                     + "\n"
@@ -338,6 +368,13 @@ def generate_corpus(
 
     if bar is not None:
         bar.close(cost=getattr(usage, "cost_usd", 0.0))
+    if progress and piled:
+        print(
+            f"  note: {piled} compressions pile up {PILEUP_LIMIT}+ negations in a row "
+            f"that the source does not. The quality filters do not catch these -- "
+            f"drop them on 'negation_pileup' before training.",
+            flush=True,
+        )
     if progress and usage is not None:
         print(f"  spent: {usage.summary()}", flush=True)
         if usage.truncated:
@@ -352,6 +389,7 @@ def generate_corpus(
         "passages": len(passages),
         "labelled": kept,
         "failed": failures,
+        "negation_pileups": piled,
         "instruction": instruction,
         "cost_usd": round(getattr(usage, "cost_usd", 0.0), 4),
         "prompt_tokens": getattr(usage, "prompt_tokens", 0),
