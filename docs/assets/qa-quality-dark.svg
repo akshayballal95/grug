@@ -1,7 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 430" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" role="img" aria-label="Answer quality versus tokens sent: grug rules beats the uncompressed baseline with 62% of the tokens; the grug cascade matches the uncompressed document on half the tokens; the classifier keeps F1 0.70 with 37%.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 430" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" role="img" aria-label="Answer quality versus tokens sent: grug rules beats the uncompressed baseline with 62% of the tokens; the grug classifier matches the uncompressed document on 54% and keeps F1 0.69 with 37%.">
 <rect width="760" height="430" rx="8" fill="#1a1a19"/>
 <text x="24.0" y="34.0" font-size="16" fill="#ffffff" font-weight="700">Keep the answers, drop the tokens</text>
-<text x="24.0" y="54.0" font-size="11.5" fill="#c3c2b7">MeetingBank QA · 600 questions over 694k tokens · requested rate 0.33 · answers judged by Sonnet 4.6</text>
+<text x="24.0" y="54.0" font-size="11.5" fill="#c3c2b7">MeetingBank QA · 450 questions · both backends across a rate sweep · answers judged by Sonnet 4.6</text>
 <line x1="70" y1="374.0" x2="726" y2="374.0" stroke="#2c2c2a" stroke-width="1"/>
 <text x="62.0" y="378.0" font-size="11" fill="#898781" text-anchor="end">0.60</text>
 <line x1="70" y1="300.0" x2="726" y2="300.0" stroke="#2c2c2a" stroke-width="1"/>
@@ -20,18 +20,18 @@
 <text x="726.0" y="392.0" font-size="11" fill="#898781" text-anchor="middle">100%</text>
 <text x="398.0" y="412.0" font-size="11" fill="#898781" text-anchor="middle">tokens sent to the LLM (% of the original document)</text>
 <text x="24.0" y="66.0" font-size="11" fill="#898781">answer quality (F1)</text>
-<line x1="70" y1="152.8" x2="726" y2="152.8" stroke="#898781" stroke-width="1" stroke-dasharray="4 4"/>
-<circle cx="726.0" cy="152.8" r="6" fill="none" stroke="#898781" stroke-width="2"/>
-<text x="714.0" y="174.8" font-size="12" fill="#c3c2b7" text-anchor="end">original, uncompressed</text>
-<text x="714.0" y="189.8" font-size="11" fill="#898781" text-anchor="end">F1 0.75 · 100% tokens</text>
-<circle cx="476.3" cy="136.1" r="7" fill="#3987e5" stroke="#1a1a19" stroke-width="2"/>
-<text x="487.3" y="118.1" font-size="12.5" fill="#ffffff" font-weight="600" text-anchor="start">grug rules</text>
-<text x="487.3" y="133.1" font-size="11" fill="#c3c2b7" text-anchor="start">F1 0.76 · 62% tokens</text>
-<circle cx="400.9" cy="154.2" r="7" fill="#199e70" stroke="#1a1a19" stroke-width="2"/>
-<text x="390.9" y="171.2" font-size="12.5" fill="#ffffff" font-weight="600" text-anchor="end">grug cascade</text>
-<text x="390.9" y="186.2" font-size="11" fill="#c3c2b7" text-anchor="end">F1 0.75 · 50% tokens</text>
-<circle cx="314.2" cy="221.5" r="7" fill="#d95926" stroke="#1a1a19" stroke-width="2"/>
-<text x="325.2" y="241.5" font-size="12.5" fill="#ffffff" font-weight="600" text-anchor="start">grug classifier</text>
-<text x="325.2" y="256.5" font-size="11" fill="#c3c2b7" text-anchor="start">F1 0.70 · 37% tokens</text>
-<text x="74.0" y="144.8" font-size="10.5" fill="#898781">uncompressed quality</text>
+<line x1="70" y1="164.8" x2="726" y2="164.8" stroke="#898781" stroke-width="1" stroke-dasharray="4 4"/>
+<circle cx="726.0" cy="164.8" r="6" fill="none" stroke="#898781" stroke-width="2"/>
+<text x="714.0" y="186.8" font-size="12" fill="#c3c2b7" text-anchor="end">original, uncompressed</text>
+<text x="714.0" y="201.8" font-size="11" fill="#898781" text-anchor="end">F1 0.74 · 100% tokens</text>
+<circle cx="476.6" cy="146.2" r="7" fill="#3987e5" stroke="#1a1a19" stroke-width="2"/>
+<text x="487.6" y="128.2" font-size="12.5" fill="#ffffff" font-weight="600" text-anchor="start">grug rules</text>
+<text x="487.6" y="143.2" font-size="11" fill="#c3c2b7" text-anchor="start">F1 0.75 · 62% tokens</text>
+<circle cx="421.9" cy="164.4" r="7" fill="#d95926" stroke="#1a1a19" stroke-width="2"/>
+<text x="409.9" y="184.4" font-size="12.5" fill="#ffffff" font-weight="600" text-anchor="end">grug classifier (rate 0.5)</text>
+<text x="409.9" y="199.4" font-size="11" fill="#c3c2b7" text-anchor="end">F1 0.74 · 54% tokens</text>
+<circle cx="314.0" cy="236.9" r="7" fill="#d95926" stroke="#1a1a19" stroke-width="2"/>
+<text x="325.0" y="256.9" font-size="12.5" fill="#ffffff" font-weight="600" text-anchor="start">grug classifier (rate 0.33)</text>
+<text x="325.0" y="271.9" font-size="11" fill="#c3c2b7" text-anchor="start">F1 0.69 · 37% tokens</text>
+<text x="74.0" y="156.8" font-size="10.5" fill="#898781">uncompressed quality</text>
 </svg>

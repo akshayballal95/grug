@@ -66,41 +66,45 @@ taking it:
 
 ## The numbers
 
-600 questions over 694k tokens of [MeetingBank](https://huggingface.co/datasets/microsoft/MeetingBank-LLMCompressed)
-transcripts, compressed at rate 0.33, answered by Claude Sonnet 4.6, scored
-against reference answers:
+450 questions over [MeetingBank](https://huggingface.co/datasets/microsoft/MeetingBank-LLMCompressed)
+transcripts, answered by Claude Sonnet 4.6, scored against reference answers.
+Every point is plotted at the ratio the backend achieved, not the rate it was
+asked for:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/akshayballal95/grug/main/docs/assets/qa-quality-dark.svg">
-  <img alt="Answer quality vs tokens sent: grug rules beats the uncompressed baseline with 62% of the tokens; grug cascade matches it on 50%; the grug classifier keeps F1 0.70 with 37%." src="https://raw.githubusercontent.com/akshayballal95/grug/main/docs/assets/qa-quality-light.svg">
+  <img alt="Answer quality vs tokens sent: grug rules beats the uncompressed baseline with 62% of the tokens; the grug classifier matches the uncompressed document on 54% and keeps F1 0.69 with 37%." src="https://raw.githubusercontent.com/akshayballal95/grug/main/docs/assets/qa-quality-light.svg">
 </picture>
 
-Compression only helps if the meaning survives it. Scored for dropped
-negations on the same run, neither grug backend lost a single one:
+`grug rules` keeps 62% of the tokens and answers a shade better than the full
+document: 0.75 F1 against 0.74, 0.62 exact match against 0.62. It also ignores
+the rate knob -- 0.62, 0.62, 0.64 for three different requests -- because it
+stops when it runs out of words it is allowed to drop. That floor is the whole
+reason the classifier exists.
+
+`grug classifier` goes under it. At `rate=0.5` it keeps 54% of the tokens for
+0.74 F1, level with sending the entire document. At `rate=0.33` the prompt
+falls to 37% of the tokens for 0.69 F1: those last seventeen points of
+compression are what the 0.05 buys.
+
+Compression only helps if the meaning survives it. On a separate 600-question
+run at rate 0.33, measured against LLMLingua-2, neither grug backend dropped a
+single negation:
 
 | Backend | Tokens kept | Exact match | F1 | Negations lost |
 | --- | ---: | ---: | ---: | ---: |
 | original (no compression) | 100% | 0.62 | 0.75 | n/a |
 | **grug rules** | 62% | **0.61** | **0.76** | **0%** |
-| **grug cascade** | 50% | **0.62** | 0.75 | **0%** |
 | **grug classifier** (mbert-control) | 37% | 0.58 | 0.70 | **0%** |
 | LLMLingua-2 | 30% | 0.56 | 0.69 | 43% |
 
-`grug rules` keeps 62% of the tokens and answers about as well as the full
-document: 0.76 F1 against 0.75, 0.61 exact match against 0.62. Both gaps are
-0.01, inside the standard error on 600 questions.
-
-`grug cascade` halves the document for the same trade: 50% of the tokens, 0.75
-F1 and 0.62 exact match, both level with sending everything. It runs the rules
-engine first, so the classifier only has to choose between words that survived a
-pass that deletes nothing load-bearing.
-
-The classifier alone spends some of that quality on a smaller prompt: 37% of the
-tokens for 0.70 F1. At a comparable size it answers slightly better than
-LLMLingua-2, and keeps every negation where LLMLingua-2 drops 43% of them.
+At a comparable size the classifier answers slightly better than LLMLingua-2,
+and keeps every negation where LLMLingua-2 drops 43% of them. One flipped
+negation is a fluent, confident, wrong answer that nothing downstream will
+question.
 
 Reproduce it with `grug benchmark qa`. Raw results are in
-[`benchmarks/`](https://github.com/akshayballal95/grug/tree/main/benchmarks/sonnet46/).
+[`benchmarks/`](https://github.com/akshayballal95/grug/tree/main/benchmarks/).
 
 ## Quick start
 
@@ -143,7 +147,7 @@ result = grug.compress(
 | --- | --- | --- | --- | --- |
 | `rules` | included | Deletes words its rule set nominates; the engine vetoes everything load-bearing | floors out around 0.6, when it runs out of safe words to drop | milliseconds |
 | `classifier` | `grugify[classifier]` | A fine-tuned encoder scores every word and the top-`rate` fraction survives, in order | 0.2 to 0.5 | about 0.2s per 400-token chunk on CPU, after a one-off model load |
-| `cascade` | `grugify[classifier]` | `rules` first, then the classifier ranks what survived | 0.2 to 0.6, and the best answers per token of the three | the two added together |
+| `cascade` | `grugify[classifier]` | `rules` first, then the classifier ranks what survived | 0.2 to 0.6 | the two added together |
 
 All three are extractive: the output is a subsequence of the input, so none can
 invent a fact. `rate` means the same thing everywhere, the fraction of tokens to

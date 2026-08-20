@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render the README benchmark charts from benchmarks/sonnet46/results.json.
+"""Render the README benchmark charts from the runs under benchmarks/.
 
 Emits four static SVGs (two charts x light/dark) into docs/assets/, so the
 README can theme them with a <picture> element. Deterministic and stdlib-only;
@@ -14,7 +14,14 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-RESULTS = ROOT / "benchmarks" / "sonnet46" / "results.json"
+#: Quality chart: the rate sweep, where both backends were measured on one set
+#: of questions at a ratio each can actually reach. Points from separate runs
+#: would put sampling noise on an axis that reads as compression.
+QUALITY_RESULTS = ROOT / "benchmarks" / "matched-ratio" / "results.json"
+#: Negation chart: the run that also measured a comparator capable of losing one.
+NEGATION_RESULTS = ROOT / "benchmarks" / "sonnet46" / "results.json"
+#: The rate every backend in that run was asked for.
+NEGATION_RATE = 0.33
 OUT = ROOT / "docs" / "assets"
 
 FONT = "system-ui, -apple-system, 'Segoe UI', sans-serif"
@@ -28,8 +35,19 @@ FONT = "system-ui, -apple-system, 'Segoe UI', sans-serif"
 #: best of them on both QA metrics.
 ENTITIES = {
     "rules": ("grug rules", 0),
-    "cascade": ("grug cascade", 2),
     "mbert-control": ("grug classifier", 1),
+}
+
+#: Points on the quality chart: (entity, requested rate) -> (label, label offset).
+#: `rate` is a request rather than a result -- `rules` floors out near 62% of the
+#: tokens whatever it is asked for -- so the label carries the rate and the point
+#: sits at the ratio actually achieved. The classifier appears twice because the
+#: two ends of its usable range are the whole argument for having it; the shared
+#: colour is what marks the pair as one backend dialled, not two backends.
+POINTS = {
+    ("rules", 0.33): ("grug rules", (11, -18)),
+    ("mbert-control", 0.5): ("grug classifier (rate 0.5)", (-12, 20)),
+    ("mbert-control", 0.33): ("grug classifier (rate 0.33)", (11, 20)),
 }
 
 THEMES = {
@@ -54,9 +72,10 @@ THEMES = {
 }
 
 
-def load_rows() -> dict[str, dict]:
-    rows = json.loads(RESULTS.read_text(encoding="utf-8"))["rows"]
-    return {row["backend"]: row for row in rows}
+def load_rows(path: Path) -> dict[tuple[str, float], dict]:
+    """Rows keyed by (backend, requested rate); a sweep holds several per backend."""
+    rows = json.loads(path.read_text(encoding="utf-8"))["rows"]
+    return {(row["backend"], row["rate"]): row for row in rows}
 
 
 def text(x: float, y: float, s: str, size: int, fill: str, **attrs: str) -> str:
@@ -78,14 +97,14 @@ def quality_chart(rows: dict[str, dict], theme: dict) -> str:
     def py(v: float) -> float:
         return top + (y_max - v) / (y_max - y_min) * plot_h
 
-    original = rows["original"]
+    original = rows[("original", 1.0)]
     parts = [
         f'<rect width="{width}" height="{height}" rx="8" fill="{theme["surface"]}"/>',
         text(24, 34, "Keep the answers, drop the tokens", 16, theme["ink"], font_weight="700"),
         text(
             24,
             54,
-            "MeetingBank QA · 600 questions over 694k tokens · requested rate 0.33 "
+            "MeetingBank QA · 450 questions · both backends across a rate sweep "
             "· answers judged by Sonnet 4.6",
             11.5,
             theme["secondary"],
@@ -147,13 +166,10 @@ def quality_chart(rows: dict[str, dict], theme: dict) -> str:
         )
     )
 
-    # (dx, dy) offsets keep the labels clear of each other and the marks.
-    offsets = {"rules": (11, -18), "cascade": (-10, 17), "mbert-control": (11, 20)}
-    for key, (label, slot) in ENTITIES.items():
-        row = rows[key]
+    for (key, rate), (label, (dx, dy)) in POINTS.items():
+        row = rows[(key, rate)]
         x, y = px(row["ratio"] * 100), py(row["f1"])
-        dx, dy = offsets[key]
-        color = theme["series"][slot]
+        color = theme["series"][ENTITIES[key][1]]
         parts.append(
             f'<circle cx="{x:.1f}" cy="{y:.1f}" r="7" fill="{color}" '
             f'stroke="{theme["surface"]}" stroke-width="2"/>'
@@ -179,8 +195,8 @@ def quality_chart(rows: dict[str, dict], theme: dict) -> str:
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" '
         f'font-family="{FONT}" role="img" aria-label="Answer quality versus tokens sent: '
         f"grug rules beats the uncompressed baseline with 62% of the tokens; the grug "
-        f"cascade matches the uncompressed document on half the tokens; the "
-        f'classifier keeps F1 0.70 with 37%.">\n{body}\n</svg>\n'
+        f"classifier matches the uncompressed document on 54% and keeps F1 0.69 "
+        f'with 37%.">\n{body}\n</svg>\n'
     )
 
 
@@ -191,7 +207,7 @@ def negation_chart(rows: dict[str, dict], theme: dict) -> str:
     bar_h, gap = 22, 16
 
     x_max = 50.0  # percent
-    order = ["mbert-control", "cascade", "rules"]
+    order = ["mbert-control", "rules"]
 
     def bx(value: float) -> float:
         return left + value / x_max * plot_w
@@ -225,7 +241,7 @@ def negation_chart(rows: dict[str, dict], theme: dict) -> str:
 
     for i, key in enumerate(order):
         label, slot = ENTITIES[key]
-        value = rows[key]["negation_loss_rate"] * 100
+        value = rows[(key, NEGATION_RATE)]["negation_loss_rate"] * 100
         y = top + i * (bar_h + gap)
         color = theme["series"][slot]
         parts.append(
@@ -255,21 +271,22 @@ def negation_chart(rows: dict[str, dict], theme: dict) -> str:
 
 
 def main() -> None:
-    rows = load_rows()
+    quality = load_rows(QUALITY_RESULTS)
+    negation = load_rows(NEGATION_RESULTS)
     OUT.mkdir(parents=True, exist_ok=True)
     written = 0
     for mode, theme in THEMES.items():
-        (OUT / f"qa-quality-{mode}.svg").write_text(quality_chart(rows, theme), encoding="utf-8")
+        (OUT / f"qa-quality-{mode}.svg").write_text(quality_chart(quality, theme), encoding="utf-8")
         written += 1
 
     # The negation chart is a comparison, and with every plotted backend at zero
     # it is a row of empty bars -- a chart of nothing, which reads as broken
     # rather than as good news. Emit it only when something on it is non-zero,
     # so it comes back on its own if a comparator is ever plotted again.
-    if any(rows[key]["negation_loss_rate"] > 0 for key in ENTITIES):
+    if any(negation[(key, NEGATION_RATE)]["negation_loss_rate"] > 0 for key in ENTITIES):
         for mode, theme in THEMES.items():
             (OUT / f"negation-loss-{mode}.svg").write_text(
-                negation_chart(rows, theme), encoding="utf-8"
+                negation_chart(negation, theme), encoding="utf-8"
             )
             written += 1
     else:
